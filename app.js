@@ -1,69 +1,40 @@
-// ==================== GLOBAL CONFIGURATION ====================
-const CONFIG = {
-  FIREBASE: {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "audit-my-plan.firebaseapp.com",
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "audit-my-plan",
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "audit-my-plan.firebasestorage.app",
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "966629605516",
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:966629605516:web:c07e23d07e22d431247ba9",
-    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-LD97F1FMRP"
-  },
-  OPENROUTER_API_KEY: import.meta.env.VITE_OPENROUTER_API_KEY || "",
-  OPENROUTER_MODEL: import.meta.env.VITE_OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
-  VECTOR_DB_URL: import.meta.env.VITE_VECTOR_DB_URL || "",
-  VECTOR_DB_API_KEY: import.meta.env.VITE_VECTOR_DB_API_KEY || ""
+// Helper to safely read env variables without crashing in non-Vite environments
+const getEnv = (key, fallback = "") => {
+  try {
+    if (typeof import.meta !== "undefined" && import.meta && import.meta.env && import.meta.env[key]) {
+      return import.meta.env[key];
+    }
+  } catch (e) {}
+  try {
+    if (typeof window !== "undefined" && window.process && window.process.env && window.process.env[key]) {
+      return window.process.env[key];
+    }
+  } catch (e) {}
+  return fallback;
 };
 
-// Environment variable fallback for browser-based deployment
-if (typeof window !== 'undefined' && window.process?.env) {
-  if (window.process.env.VITE_FIREBASE_API_KEY) CONFIG.FIREBASE.apiKey = window.process.env.VITE_FIREBASE_API_KEY;
-  if (window.process.env.VITE_OPENROUTER_API_KEY) CONFIG.OPENROUTER_API_KEY = window.process.env.VITE_OPENROUTER_API_KEY;
-  if (window.process.env.VITE_VECTOR_DB_URL) CONFIG.VECTOR_DB_URL = window.process.env.VITE_VECTOR_DB_URL;
-  if (window.process.env.VITE_VECTOR_DB_API_KEY) CONFIG.VECTOR_DB_API_KEY = window.process.env.VITE_VECTOR_DB_API_KEY;
-}
+const CONFIG = {
+  SUPABASE_URL: 'https://kkxkrtvthipfamssdcjr.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtreGtydHZ0aGlwZmFtc3NkY2pyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNTcwMDQsImV4cCI6MjA5OTkzMzAwNH0.x6_QPSlFiDZ04jE8z5NMu_67U0kpxihXgdIwyPlIGVE',
+  OPENROUTER_API_KEY: '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',
+  OPENROUTER_MODEL: getEnv("VITE_OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
+  EMBEDDING_MODEL: "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+};
 
-// ==================== FIREBASE MODULAR CDN IMPORTS ====================
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { 
-  getAuth,
-  signInWithPopup, 
-  signInWithRedirect,
-  getRedirectResult,
-  GoogleAuthProvider, 
-  signOut, 
-  onAuthStateChanged,
-  browserPopupRedirectResolver
-} from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc,
-  deleteDoc, 
-  query, 
-  where, 
-  onSnapshot 
-} from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
-
-// ==================== GLOBAL APP STATE ====================
-let auth = null;
-let db = null;
+// ==================== SUPABASE CLIENT & GLOBAL STATE ====================
+let supabase = null;
 let currentUser = null;
 let tags = [];
 let nodes = [];
 let syllabus = [];
+let uploadedSources = [];
+let realtimeChannel = null;
 
 let activeTagIds = []; // Array of tag IDs selected for filtering directory
 let activeNodeId = null; // Active knowledge node being viewed
 let activeSyllabusId = null; // Active syllabus item being focused
 let editingNodeId = null; // Node currently being edited in form
 let currentView = 'form'; // 'form' | 'syllabus' | 'node' | 'chat' | 'settings'
-
-// Vector RAG Store & Uploaded Source Documents State
-let vectorStore = []; // Array of { id, fileName, pageNum, chunkIndex, text, embedding }
-let uploadedSources = []; // Array of { id, fileName, pageCount, chunkCount }
 
 // Multi-select state variables
 let formSelectedTagIds = new Set();
@@ -80,93 +51,65 @@ let isRecallModeActive = false;
 // User-created custom folders (stored in localStorage)
 let userFolders = JSON.parse(localStorage.getItem('userFolders') || '[]');
 
-// Real-time listener unsubscribers
-let unsubscribeTags = null;
-let unsubscribeNodes = null;
-let unsubscribeSyllabus = null;
-
-// ==================== DOM ELEMENTS SELECTORS ====================
+// ==================== DOM ELEMENT REFERENCES ====================
 const loginOverlay = document.getElementById("login-overlay");
-const loginError = document.getElementById("login-error");
 const btnLogin = document.getElementById("btn-login");
+const loginError = document.getElementById("login-error");
 const appContainer = document.getElementById("app-container");
 
-const userAvatar = document.getElementById("user-avatar");
-const userName = document.getElementById("user-name");
-const sidebarProfile = document.getElementById("sidebar-profile");
-
-// Notion Light/Dark Mode Switcher
-const btnThemeToggle = document.getElementById("btn-theme-toggle");
-const themeIconLight = document.getElementById("theme-icon-light");
-const themeIconDark = document.getElementById("theme-icon-dark");
-
-// Navigation Switchers
+// Navigation Sidebar Elements
 const navNewEntry = document.getElementById("nav-new-entry");
 const navSyllabusPlanner = document.getElementById("nav-syllabus-planner");
 const navAnalyticsChat = document.getElementById("nav-analytics-chat");
+const sidebarProfile = document.getElementById("sidebar-profile");
+const userAvatar = document.getElementById("user-avatar");
+const userName = document.getElementById("user-name");
 
-// Sidebar Tag Controls
+// Tag Directory & Sidebar Elements
+const tagCloudContainer = document.getElementById("tag-cloud-container");
+const btnClearFilters = document.getElementById("btn-clear-filters");
+const nodeDirectoryContainer = document.getElementById("node-directory");
 const btnToggleNewTag = document.getElementById("btn-toggle-new-tag");
 const inlineTagForm = document.getElementById("inline-tag-form");
 const inputTagName = document.getElementById("input-tag-name");
 const btnSaveTag = document.getElementById("btn-save-tag");
 const btnCancelTag = document.getElementById("btn-cancel-tag");
-const tagCloudContainer = document.getElementById("tag-cloud");
-const nodeDirectoryContainer = document.getElementById("node-directory");
-const btnClearFilters = document.getElementById("btn-clear-filters");
 
-// Workspace Loading & Overlay
-const workspaceLoading = document.getElementById("workspace-loading");
-const loadingText = document.getElementById("loading-text");
+// Theme Toggle Button
+const btnThemeToggle = document.getElementById("btn-theme-toggle");
+const themeIconLight = document.getElementById("theme-icon-light");
+const themeIconDark = document.getElementById("theme-icon-dark");
 
-// Workspace Views
+// Form Station (View 1) Elements
 const viewForm = document.getElementById("view-form");
-const viewSyllabus = document.getElementById("view-syllabus");
-const viewNode = document.getElementById("view-node");
-const viewChat = document.getElementById("view-chat");
-const viewSettings = document.getElementById("view-settings");
-
-// Settings elements
-const settingsAvatar = document.getElementById("settings-avatar");
-const settingsName = document.getElementById("settings-name");
-const settingsEmail = document.getElementById("settings-email");
-const settingsUid = document.getElementById("settings-uid");
-const btnSettingsLogout = document.getElementById("btn-settings-logout");
-const inputSettingsKey = document.getElementById("input-settings-key");
-const inputSettingsModel = document.getElementById("input-settings-model");
-const btnSaveSettings = document.getElementById("btn-save-settings");
-const settingsStatusMessage = document.getElementById("settings-status-message");
-
-// Left Pane: Reading Sandbox elements
-const scratchpadEditor = document.getElementById("scratchpad-editor");
-const btnScratchpadLoad = document.getElementById("btn-scratchpad-load");
-const btnScratchpadClear = document.getElementById("btn-scratchpad-clear");
-
-// Right Pane: Input Form Elements
 const metricsForm = document.getElementById("metrics-form");
 const inputDate = document.getElementById("input-date");
 const inputDuration = document.getElementById("input-duration");
 const inputRange = document.getElementById("input-range");
-const formTagSelection = document.getElementById("form-tag-selection");
 const inputContradiction = document.getElementById("input-contradiction");
-const syllabusActiveNotifier = document.getElementById("syllabus-active-notifier");
-const btnUnlinkSyllabus = document.getElementById("btn-unlink-syllabus");
+const scratchpadEditor = document.getElementById("scratchpad-editor");
+const btnScratchpadClear = document.getElementById("btn-scratchpad-clear");
+const btnScratchpadLoad = document.getElementById("btn-scratchpad-load");
+const formTagSelection = document.getElementById("form-tag-selection");
 
-// Timer components
+// Stopwatch Timer DOM Elements
 const timerDisplay = document.getElementById("timer-display");
+const timerDot = document.getElementById("timer-dot");
 const btnTimerToggle = document.getElementById("btn-timer-toggle");
 const btnTimerReset = document.getElementById("btn-timer-reset");
 const btnTimerCommit = document.getElementById("btn-timer-commit");
-const timerDot = document.getElementById("timer-dot");
 
-// Syllabus View Elements
+// Syllabus Planner (View 2) Elements
+const viewSyllabus = document.getElementById("view-syllabus");
+const syllabusForm = document.getElementById("syllabus-form");
 const inputSyllabusTitle = document.getElementById("input-syllabus-title");
-const syllabusTagSelection = document.getElementById("syllabus-tag-selection");
-const btnSaveSyllabus = document.getElementById("btn-save-syllabus");
 const syllabusList = document.getElementById("syllabus-list");
-const syllabusProgressText = document.getElementById("syllabus-progress-text");
+const syllabusActiveNotifier = document.getElementById("syllabus-active-notifier");
+const activeSyllabusName = document.getElementById("active-syllabus-name");
+const btnUnlinkSyllabus = document.getElementById("btn-unlink-syllabus");
 
-// Node Viewer Elements
+// Active Node Viewer (View 3) Elements
+const viewNode = document.getElementById("view-node");
 const nodeTitle = document.getElementById("node-title");
 const nodeDate = document.getElementById("node-date");
 const nodeDuration = document.getElementById("node-duration");
@@ -174,77 +117,95 @@ const nodeRange = document.getElementById("node-range");
 const nodeTagsList = document.getElementById("node-tags-list");
 const nodeContradiction = document.getElementById("node-contradiction");
 const nodeAiAnalysis = document.getElementById("node-ai-analysis");
-const btnDeleteNode = document.getElementById("btn-delete-node");
-
-// Active Recall & Export elements
 const btnToggleRecall = document.getElementById("btn-toggle-recall");
 const btnExportNode = document.getElementById("btn-export-node");
+const btnDeleteNode = document.getElementById("btn-delete-node");
 
-// Chat View Elements
+// Historic Reflection Chat (View 4) Elements
+const viewChat = document.getElementById("view-chat");
 const chatMessages = document.getElementById("chat-messages");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 
-// Confirmation Modal Elements
+// Settings (View 5) Elements
+const viewSettings = document.getElementById("view-settings");
+const settingsAvatar = document.getElementById("settings-avatar");
+const settingsName = document.getElementById("settings-name");
+const settingsEmail = document.getElementById("settings-email");
+const settingsUid = document.getElementById("settings-uid");
+const inputSettingsKey = document.getElementById("input-settings-key");
+const inputSettingsModel = document.getElementById("input-settings-model");
+const btnSaveSettings = document.getElementById("btn-save-settings");
+const btnSettingsLogout = document.getElementById("btn-settings-logout");
+const settingsStatusMessage = document.getElementById("settings-status-message");
+
+// Asynchronous Safeguards (Loading Spinner & Confirmation Modal)
+const workspaceLoading = document.getElementById("workspace-loading");
+const loadingText = document.getElementById("loading-text");
 const confirmModal = document.getElementById("confirm-modal");
 
 // ==================== APP INITIALIZATION ====================
 document.addEventListener("DOMContentLoaded", () => {
-  // Load configuration from local browser storage on bootstrap
+  // Load local settings overrides
   let storedKey = localStorage.getItem("openrouter_api_key");
   let storedModel = localStorage.getItem("openrouter_model");
-  
-  if (!storedKey && CONFIG.OPENROUTER_API_KEY) {
-    localStorage.setItem("openrouter_api_key", CONFIG.OPENROUTER_API_KEY);
-    storedKey = CONFIG.OPENROUTER_API_KEY;
-  }
-  if (!storedModel && CONFIG.OPENROUTER_MODEL) {
-    localStorage.setItem("openrouter_model", CONFIG.OPENROUTER_MODEL);
-    storedModel = CONFIG.OPENROUTER_MODEL;
-  }
+  let storedSupaUrl = localStorage.getItem("supabase_url");
+  let storedSupaKey = localStorage.getItem("supabase_anon_key");
 
   if (storedKey) CONFIG.OPENROUTER_API_KEY = storedKey;
   if (storedModel) CONFIG.OPENROUTER_MODEL = storedModel;
+  if (storedSupaUrl) CONFIG.SUPABASE_URL = storedSupaUrl;
+  if (storedSupaKey) CONFIG.SUPABASE_ANON_KEY = storedSupaKey;
 
   initTheme();
   setupNavigators();
   setupTagFormToggle();
   setupSettingsHandlers();
-  setupTagFormToggle();
   setupRecallMode();
   setupDragDropIngestion();
   setupScratchpad();
   setupSyllabusActions();
-  
-  btnClearFilters.addEventListener("click", clearFilters);
+  setupTimer();
 
-  // Validate API Configuration before booting
-  if (!CONFIG.FIREBASE.apiKey || CONFIG.FIREBASE.apiKey.trim() === "") {
-    loginError.classList.remove("hidden");
-    loginError.innerHTML = `
-      <strong>Configuration Required:</strong><br>
-      Please open <code>app.js</code> and configure the <code>CONFIG</code> object at the top with your Firebase API keys and OpenRouter API key.
-    `;
-    btnLogin.disabled = true;
-    btnLogin.classList.add("opacity-55", "cursor-not-allowed");
-    return;
-  }
+  if (btnClearFilters) btnClearFilters.addEventListener("click", clearFilters);
 
-  // Initialize Firebase V9+
-  try {
-    const app = initializeApp(CONFIG.FIREBASE);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    
-    // Listen for Auth changes
-    onAuthStateChanged(auth, handleAuthStateChanged);
-    getRedirectResult(auth).catch(console.error);
-  } catch (error) {
-    console.error("Firebase init failed:", error);
-    loginError.classList.remove("hidden");
-    loginError.textContent = "Initialization failed: " + error.message;
+  // Initialize Supabase Client
+  const windowSupabase = window.supabase?.createClient;
+  if (windowSupabase && CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY) {
+    try {
+      supabase = windowSupabase(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+      initSupabaseAuth();
+    } catch (err) {
+      console.error("Supabase Client Init Error:", err);
+      showConfigRequiredError(err.message);
+    }
+  } else {
+    // Attempt dynamic ESM import fallback
+    import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm")
+      .then(({ createClient }) => {
+        if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY) {
+          supabase = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+          initSupabaseAuth();
+        } else {
+          showConfigRequiredError();
+        }
+      })
+      .catch(err => {
+        console.error("Supabase ESM import failed:", err);
+        showConfigRequiredError(err.message);
+      });
   }
 });
+
+function showConfigRequiredError(errMsg = "") {
+  if (!loginError) return;
+  loginError.classList.remove("hidden");
+  loginError.innerHTML = `
+    <strong>Configuration Required:</strong><br>
+    Please configure <code>CONFIG.SUPABASE_URL</code> and <code>CONFIG.SUPABASE_ANON_KEY</code> inside <code>app.js</code> or update environment variables.
+    ${errMsg ? `<br><span class="text-xs text-red-400">${errMsg}</span>` : ''}
+  `;
+}
 
 // ==================== THEME CONTROLLER ====================
 function initTheme() {
@@ -279,45 +240,66 @@ function initTheme() {
   });
 }
 
-// ==================== AUTHENTICATION HANDLERS ====================
-btnLogin.addEventListener("click", async () => {
-  loginError.classList.add("hidden");
-  const provider = new GoogleAuthProvider();
-  try {
-    showLoading("Authenticating...");
-    await signInWithPopup(auth, provider, browserPopupRedirectResolver);
-  } catch (error) {
-    if (
-      error.code === "auth/cancelled-popup-request" || 
-      error.code === "auth/popup-blocked" || 
-      error.code === "auth/popup-closed-by-user"
-    ) {
-      try {
-        await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
-      } catch (redirectErr) {
-        console.error("Redirect login failed:", redirectErr);
-        hideLoading();
-        loginError.classList.remove("hidden");
-        loginError.textContent = redirectErr.message;
-      }
+// ==================== AUTHENTICATION HANDLERS (SUPABASE AUTH) ====================
+function initSupabaseAuth() {
+  if (!supabase) return;
+
+  // Check existing active session
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session?.user) {
+      handleAuthStateChanged(session.user);
+    }
+  });
+
+  // Observe Auth changes
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (session?.user) {
+      handleAuthStateChanged(session.user);
     } else {
+      handleAuthStateChanged(null);
+    }
+  });
+}
+
+if (btnLogin) {
+  btnLogin.addEventListener("click", async () => {
+    if (loginError) loginError.classList.add("hidden");
+    if (!supabase) {
+      alert("Supabase Client is not initialized. Please verify configuration.");
+      return;
+    }
+
+    try {
+      showLoading("Google orqali tizimga kirilmoqda...");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+    } catch (error) {
       console.error("Login failed:", error);
       hideLoading();
-      loginError.classList.remove("hidden");
-      loginError.textContent = error.message;
+      if (loginError) {
+        loginError.classList.remove("hidden");
+        loginError.textContent = "Kirishda xatolik: " + error.message;
+      }
     }
-  }
-});
+  });
+}
 
-btnSettingsLogout.addEventListener("click", () => {
-  confirmAction(
-    "Sign Out",
-    "Are you sure you want to log out of the Workspace?",
-    () => {
-      signOut(auth);
-    }
-  );
-});
+if (btnSettingsLogout) {
+  btnSettingsLogout.addEventListener("click", () => {
+    confirmAction(
+      "Sign Out",
+      "Are you sure you want to log out of the Workspace?",
+      async () => {
+        if (supabase) await supabase.auth.signOut();
+      }
+    );
+  });
+}
 
 function handleAuthStateChanged(user) {
   hideLoading();
@@ -325,19 +307,24 @@ function handleAuthStateChanged(user) {
     currentUser = user;
     
     // Set up Profile Card
-    userAvatar.src = user.photoURL || "https://picsum.photos/100";
-    userName.textContent = user.displayName || "Cognitive Agent";
+    const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || "https://picsum.photos/100";
+    const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || "Tadqiqotchi";
+    
+    if (userAvatar) userAvatar.src = avatarUrl;
+    if (userName) userName.textContent = name;
     
     // Set default date input value to today (local YYYY-MM-DD)
     const today = new Date().toLocaleDateString('sv');
-    inputDate.value = today;
+    if (inputDate) inputDate.value = today;
 
     // Show app structure
-    loginOverlay.classList.add("opacity-0", "pointer-events-none");
-    setTimeout(() => loginOverlay.classList.add("hidden"), 500);
-    appContainer.classList.remove("hidden");
+    if (loginOverlay) {
+      loginOverlay.classList.add("opacity-0", "pointer-events-none");
+      setTimeout(() => loginOverlay.classList.add("hidden"), 500);
+    }
+    if (appContainer) appContainer.classList.remove("hidden");
 
-    // Establish live firestore synchronization
+    // Establish live PostgREST data fetching & Realtime synchronization
     subscribeToDatabase();
     switchView("form");
   } else {
@@ -348,77 +335,166 @@ function handleAuthStateChanged(user) {
     syllabus = [];
     activeTagIds = [];
     activeNodeId = null;
-    activeSyllabusId = null;
-    formSelectedTagIds.clear();
-    syllabusSelectedTagIds.clear();
     
-    // Clean subscriptions
-    if (unsubscribeTags) unsubscribeTags();
-    if (unsubscribeNodes) unsubscribeNodes();
-    if (unsubscribeSyllabus) unsubscribeSyllabus();
-    
-    // Show login structure
-    appContainer.classList.add("hidden");
-    loginOverlay.classList.remove("hidden");
-    setTimeout(() => loginOverlay.classList.remove("opacity-0", "pointer-events-none"), 50);
+    if (realtimeChannel && supabase) {
+      supabase.removeChannel(realtimeChannel);
+      realtimeChannel = null;
+    }
+
+    if (appContainer) appContainer.classList.add("hidden");
+    if (loginOverlay) {
+      loginOverlay.classList.remove("hidden", "opacity-0", "pointer-events-none");
+    }
   }
 }
 
-// ==================== FIRESTORE DATA SYNCHRONIZATION ====================
-function subscribeToDatabase() {
-  if (!currentUser) return;
+// ==================== DATABASE OPERATIONS & REAL-TIME SYNC ====================
+async function subscribeToDatabase() {
+  if (!supabase || !currentUser) return;
 
-  // Tags synchronization
-  const tagsQuery = query(
-    collection(db, "tags"),
-    where("userId", "==", currentUser.uid)
-  );
+  // Initial Fetch for all collections
+  await fetchAllUserData();
 
-  unsubscribeTags = onSnapshot(tagsQuery, (snapshot) => {
-    tags = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    tags.sort((a, b) => a.name.localeCompare(b.name));
-    renderTags();
-    renderFormTags();
-    renderSyllabusTagSelection();
-  }, (error) => {
-    console.error("Tags subscription error:", error);
-  });
+  // Clean up any existing channel
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel);
+  }
 
-  // Nodes synchronization
-  const nodesQuery = query(
-    collection(db, "nodes"),
-    where("userId", "==", currentUser.uid)
-  );
+  // Subscribe to Supabase Postgres Changes
+  realtimeChannel = supabase.channel('public:db_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'nodes', filter: `user_id=eq.${currentUser.id}` }, () => {
+      fetchNodes();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'syllabus', filter: `user_id=eq.${currentUser.id}` }, () => {
+      fetchSyllabus();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tags', filter: `user_id=eq.${currentUser.id}` }, () => {
+      fetchTags();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sources', filter: `user_id=eq.${currentUser.id}` }, () => {
+      fetchSources();
+    })
+    .subscribe();
+}
 
-  unsubscribeNodes = onSnapshot(nodesQuery, (snapshot) => {
-    nodes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    nodes.sort((a, b) => new Date(b.rawFormFields.date) - new Date(a.rawFormFields.date));
-    renderNodeDirectory();
-  }, (error) => {
-    console.error("Nodes subscription error:", error);
-  });
+async function fetchAllUserData() {
+  await Promise.all([fetchTags(), fetchNodes(), fetchSyllabus(), fetchSources()]);
+}
 
-  // Syllabus synchronization
-  const syllabusQuery = query(
-    collection(db, "syllabus"),
-    where("userId", "==", currentUser.uid)
-  );
+async function fetchTags() {
+  if (!supabase || !currentUser) return;
+  const { data, error } = await supabase
+    .from('tags')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: true });
 
-  unsubscribeSyllabus = onSnapshot(syllabusQuery, (snapshot) => {
-    syllabus = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    syllabus.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    renderSyllabusList();
-  }, (error) => {
-    console.error("Syllabus subscription error:", error);
-  });
+  if (error) {
+    console.error("Fetch tags error:", error);
+    return;
+  }
+
+  tags = (data || []).map(t => ({
+    id: t.id,
+    name: t.name,
+    userId: t.user_id,
+    createdAt: t.created_at
+  }));
+
+  renderTags();
+  renderFormTags();
+}
+
+async function fetchNodes() {
+  if (!supabase || !currentUser) return;
+  const { data, error } = await supabase
+    .from('nodes')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('date', { ascending: false });
+
+  if (error) {
+    console.error("Fetch nodes error:", error);
+    return;
+  }
+
+  nodes = (data || []).map(r => ({
+    id: r.id,
+    userId: r.user_id,
+    tagIds: r.tag_ids || [],
+    customFolder: r.custom_folder || null,
+    aiAnalysis: r.ai_analysis || "",
+    obsidianContent: r.obsidian_content || "",
+    sm2: r.sm2 || null,
+    createdAt: r.created_at,
+    rawFormFields: {
+      date: r.date || "",
+      focusDuration: r.focus_duration || 0,
+      studyRange: r.study_range || "",
+      contradiction: r.contradiction || "",
+      scratchpadContent: ""
+    }
+  }));
+
+  renderNodeDirectory();
+  if (activeNodeId) selectNode(activeNodeId);
+}
+
+async function fetchSyllabus() {
+  if (!supabase || !currentUser) return;
+  const { data, error } = await supabase
+    .from('syllabus')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error("Fetch syllabus error:", error);
+    return;
+  }
+
+  syllabus = (data || []).map(s => ({
+    id: s.id,
+    title: s.title,
+    status: s.status,
+    userId: s.user_id,
+    createdAt: s.created_at
+  }));
+
+  renderSyllabusList();
+}
+
+async function fetchSources() {
+  if (!supabase || !currentUser) return;
+  const { data, error } = await supabase
+    .from('sources')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error("Fetch sources error:", error);
+    return;
+  }
+
+  uploadedSources = (data || []).map(src => ({
+    id: src.id,
+    fileName: src.filename,
+    pageCount: src.page_count || 0,
+    chunkCount: src.chunk_count || 0,
+    status: src.status,
+    errorMessage: src.source_error_message
+  }));
+
+  renderUploadedSources();
 }
 
 // ==================== WORKSPACE NAVIGATION ====================
 function setupNavigators() {
-  navNewEntry.addEventListener("click", () => switchView("form"));
-  navSyllabusPlanner.addEventListener("click", () => switchView("syllabus"));
-  navAnalyticsChat.addEventListener("click", () => switchView("chat"));
-  sidebarProfile.addEventListener("click", () => switchView("settings"));
+  if (navNewEntry) navNewEntry.addEventListener("click", () => switchView("form"));
+  if (navSyllabusPlanner) navSyllabusPlanner.addEventListener("click", () => switchView("syllabus"));
+  if (navAnalyticsChat) navAnalyticsChat.addEventListener("click", () => switchView("chat"));
+  if (sidebarProfile) sidebarProfile.addEventListener("click", () => switchView("settings"));
 
   const btnToggleSidebar = document.getElementById("btn-toggle-sidebar");
   const mainSidebar = document.getElementById("main-sidebar");
@@ -434,13 +510,14 @@ function setupNavigators() {
         el.classList.toggle("hidden", isCollapsed);
       });
 
-      // Hide entire directory section wrapper (header + toolbar + list)
+      // Hide directory section wrapper
       const dirWrapper = document.getElementById("sidebar-directory-wrapper");
       if (dirWrapper) dirWrapper.classList.toggle("hidden", isCollapsed);
 
-      // Compact nav buttons — hide text, keep icons
+      // Compact nav buttons
       const navBtns = [navNewEntry, navSyllabusPlanner, navAnalyticsChat];
       navBtns.forEach(btn => {
+        if (!btn) return;
         const span = btn.querySelector("span");
         if (span) span.classList.toggle("hidden", isCollapsed);
         btn.classList.toggle("justify-center", isCollapsed);
@@ -464,47 +541,49 @@ function setupNavigators() {
 function switchView(viewName) {
   currentView = viewName;
   
-  // Reset navigation selection styling
   const navItems = [navNewEntry, navSyllabusPlanner, navAnalyticsChat];
   navItems.forEach(nav => {
-    nav.classList.remove("bg-gradient-to-r", "from-blue-600", "via-purple-600", "to-pink-500", "from-purple-600", "to-indigo-600", "text-white", "shadow-md", "shadow-purple-500/20", "font-bold");
+    if (!nav) return;
+    nav.classList.remove("bg-gradient-to-r", "from-blue-600", "via-purple-600", "to-pink-500", "text-white", "shadow-md", "shadow-purple-500/20", "font-bold");
     nav.classList.add("text-slate-600", "hover:text-purple-700", "hover:bg-purple-50", "border-transparent");
   });
 
-  viewForm.classList.add("hidden");
-  viewSyllabus.classList.add("hidden");
-  viewNode.classList.add("hidden");
-  viewChat.classList.add("hidden");
-  viewSettings.classList.add("hidden");
+  if (viewForm) viewForm.classList.add("hidden");
+  if (viewSyllabus) viewSyllabus.classList.add("hidden");
+  if (viewNode) viewNode.classList.add("hidden");
+  if (viewChat) viewChat.classList.add("hidden");
+  if (viewSettings) viewSettings.classList.add("hidden");
 
   let activeNav = null;
   let targetView = null;
 
   if (viewName === "form") {
-    viewForm.classList.remove("hidden");
+    if (viewForm) viewForm.classList.remove("hidden");
     activeNav = navNewEntry;
     targetView = viewForm;
   } else if (viewName === "syllabus") {
-    viewSyllabus.classList.remove("hidden");
+    if (viewSyllabus) viewSyllabus.classList.remove("hidden");
     activeNav = navSyllabusPlanner;
     targetView = viewSyllabus;
   } else if (viewName === "node") {
-    viewNode.classList.remove("hidden");
+    if (viewNode) viewNode.classList.remove("hidden");
     targetView = viewNode;
   } else if (viewName === "chat") {
-    viewChat.classList.remove("hidden");
+    if (viewChat) viewChat.classList.remove("hidden");
     activeNav = navAnalyticsChat;
     targetView = viewChat;
   } else if (viewName === "settings") {
-    viewSettings.classList.remove("hidden");
+    if (viewSettings) viewSettings.classList.remove("hidden");
     targetView = viewSettings;
     if (currentUser) {
-      settingsAvatar.src = currentUser.photoURL || "https://picsum.photos/100";
-      settingsName.textContent = currentUser.displayName || "Tadqiqotchi";
-      settingsEmail.textContent = currentUser.email || "---";
-      settingsUid.textContent = currentUser.uid;
-      inputSettingsKey.value = CONFIG.OPENROUTER_API_KEY || "";
-      inputSettingsModel.value = CONFIG.OPENROUTER_MODEL || "meta-llama/llama-3-8b-instruct:free";
+      const avatarUrl = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || "https://picsum.photos/100";
+      const name = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || "Tadqiqotchi";
+      if (settingsAvatar) settingsAvatar.src = avatarUrl;
+      if (settingsName) settingsName.textContent = name;
+      if (settingsEmail) settingsEmail.textContent = currentUser.email || "---";
+      if (settingsUid) settingsUid.textContent = currentUser.id;
+      if (inputSettingsKey) inputSettingsKey.value = CONFIG.OPENROUTER_API_KEY || "";
+      if (inputSettingsModel) inputSettingsModel.value = CONFIG.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct:free";
     }
   }
 
@@ -521,7 +600,7 @@ function switchView(viewName) {
   }
 }
 
-// ==================== DYNAMIC TAG DIRECTORY ACTIONS ====================
+// ==================== TAG DIRECTORY ACTIONS ====================
 function setupTagFormToggle() {
   if (btnToggleNewTag && inlineTagForm) {
     btnToggleNewTag.addEventListener("click", () => {
@@ -548,7 +627,6 @@ function setupTagFormToggle() {
   }
 }
 
-// Dynamic Tag Colors Generator
 function getTagStyles(tagName) {
   const colors = [
     { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff' },
@@ -577,14 +655,19 @@ async function createTag() {
 
   try {
     showLoading("Teg yaratilmoqda...");
-    await addDoc(collection(db, "tags"), {
-      name: name,
-      userId: currentUser.uid,
-      createdAt: new Date().toISOString()
-    });
+    const { data, error } = await supabase
+      .from('tags')
+      .insert([{
+        name: name,
+        user_id: currentUser.id
+      }])
+      .select();
+
+    if (error) throw error;
     
     inputTagName.value = "";
-    inlineTagForm.classList.add("hidden");
+    if (inlineTagForm) inlineTagForm.classList.add("hidden");
+    await fetchTags();
   } catch (error) {
     alert("Teg yaratishda xatolik: " + error.message);
   } finally {
@@ -635,9 +718,9 @@ function toggleFilterTag(tagId) {
   }
 
   if (activeTagIds.length > 0) {
-    btnClearFilters.classList.remove("hidden");
+    if (btnClearFilters) btnClearFilters.classList.remove("hidden");
   } else {
-    btnClearFilters.classList.add("hidden");
+    if (btnClearFilters) btnClearFilters.classList.add("hidden");
   }
 
   renderTags();
@@ -646,10 +729,11 @@ function toggleFilterTag(tagId) {
 
 function clearFilters() {
   activeTagIds = [];
-  btnClearFilters.classList.add("hidden");
+  if (btnClearFilters) btnClearFilters.classList.add("hidden");
   renderTags();
   renderNodeDirectory();
 }
+
 // Helper: SM-2 Spaced Repetition SuperMemo Algorithm
 function calculateSM2(q, prevInterval = 0, prevEF = 2.5, reviewCount = 0) {
   let nextEF = prevEF + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
@@ -678,8 +762,7 @@ function calculateSM2(q, prevInterval = 0, prevEF = 2.5, reviewCount = 0) {
     interval: nextInterval,
     easeFactor: Number(nextEF.toFixed(2)),
     reviewCount: reviewCount,
-    nextReviewDate: nextReviewDateStr,
-    lastReviewedDate: new Date().toISOString().split('T')[0]
+    nextReviewDate: nextReviewDateStr
   };
 }
 
@@ -742,7 +825,7 @@ function renderNodeDirectory() {
     );
   }
 
-  if (filteredNodes.length === 0) {
+  if (filteredNodes.length === 0 && userFolders.length === 0) {
     nodeDirectoryContainer.innerHTML = `
       <div class="text-slate-400 text-xs text-center py-6 italic font-mono bg-slate-50 rounded-xl border border-slate-200">
         ${activeTagIds.length > 0 ? 'Filtr bo\'yicha yozuvlar topilmadi.' : 'Saqlangan yozuvlar yo\'q.'}
@@ -752,121 +835,125 @@ function renderNodeDirectory() {
   }
 
   nodeDirectoryContainer.innerHTML = "";
-
   const groupedFolders = groupNodesByFolder(filteredNodes);
 
   Object.keys(groupedFolders).forEach(folderName => {
-    const folderNodes = groupedFolders[folderName];
+    const itemsInFolder = groupedFolders[folderName];
+    const isDueFolder = folderName.includes("Bugungi Takrorlash");
 
     const folderContainer = document.createElement("div");
     folderContainer.className = "space-y-1";
 
     // Folder Header Component with Drag & Drop Drop Target Handlers
-    const folderHeader = document.createElement("button");
-    folderHeader.className = "w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-purple-50/70 border border-slate-200 text-xs font-bold text-slate-800 transition-all cursor-pointer shadow-2xs group";
+    const folderHeader = document.createElement("div");
+    folderHeader.className = `flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer user-select-none ${
+      isDueFolder 
+        ? 'bg-amber-500/10 border-amber-500/30 text-amber-900 font-bold' 
+        : 'bg-white border-slate-200/80 hover:border-purple-300 text-slate-700'
+    }`;
     
     folderHeader.innerHTML = `
       <div class="flex items-center space-x-2 truncate">
-        <svg class="w-4 h-4 text-purple-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-        </svg>
-        <span class="truncate font-sans font-extrabold">${folderName}</span>
+        <span class="transform transition-transform text-[10px] text-slate-400">▼</span>
+        <span class="text-xs ${isDueFolder ? 'text-amber-500' : 'text-purple-600'}">📁</span>
+        <span class="text-xs font-semibold truncate font-sans">${folderName}</span>
       </div>
-      <div class="flex items-center space-x-1.5 flex-shrink-0">
-        <span class="px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[9px] font-mono font-bold text-purple-700">${folderNodes.length}</span>
-        <svg class="w-3.5 h-3.5 text-slate-400 transform transition-transform duration-200 folder-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </div>
+      <span class="text-[10px] px-2 py-0.5 rounded-full font-mono ${
+        isDueFolder ? 'bg-amber-500 text-white font-bold' : 'bg-slate-100 text-slate-500'
+      }">${itemsInFolder.length}</span>
     `;
 
-    // Drag Over & Drop listeners on Folder Header
-    folderHeader.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      folderHeader.classList.add("border-purple-500", "bg-purple-100", "ring-2", "ring-purple-400/30");
+    // Sub-items container
+    const subItemsContainer = document.createElement("div");
+    subItemsContainer.className = "pl-3 space-y-1 mt-1 transition-all";
+
+    // Toggle collapse/expand
+    let isExpanded = true;
+    folderHeader.addEventListener("click", (e) => {
+      if (e.target.closest('.drag-indicator')) return;
+      isExpanded = !isExpanded;
+      subItemsContainer.classList.toggle("hidden", !isExpanded);
+      const arrow = folderHeader.querySelector("span");
+      if (arrow) arrow.style.transform = isExpanded ? "rotate(0deg)" : "rotate(-90deg)";
     });
 
-    folderHeader.addEventListener("dragleave", (e) => {
+    // Drag Over & Drop listeners on Folder Header (Async Supabase custom_folder update)
+    folderHeader.addEventListener("dragover", (e) => {
       e.preventDefault();
-      folderHeader.classList.remove("border-purple-500", "bg-purple-100", "ring-2", "ring-purple-400/30");
+      folderHeader.classList.add("border-purple-500", "bg-purple-50");
+    });
+
+    folderHeader.addEventListener("dragleave", () => {
+      folderHeader.classList.remove("border-purple-500", "bg-purple-50");
     });
 
     folderHeader.addEventListener("drop", async (e) => {
       e.preventDefault();
-      folderHeader.classList.remove("border-purple-500", "bg-purple-100", "ring-2", "ring-purple-400/30");
+      folderHeader.classList.remove("border-purple-500", "bg-purple-50");
       const draggedNodeId = e.dataTransfer.getData("text/plain");
       if (!draggedNodeId) return;
 
       const targetNode = nodes.find(n => n.id === draggedNodeId);
-      if (!targetNode) return;
-
-      try {
-        showLoading(`Yozuv '${folderName}' papkasiga ko'chirilmoqda...`);
+      if (targetNode) {
         targetNode.customFolder = folderName;
-        const nodeRef = doc(db, "nodes", draggedNodeId);
-        await updateDoc(nodeRef, { customFolder: folderName });
         renderNodeDirectory();
-      } catch (err) {
-        alert("Ko'chirishda xatolik: " + err.message);
-      } finally {
-        hideLoading();
+
+        // Update database asynchronously in Supabase
+        if (supabase) {
+          const { error } = await supabase
+            .from('nodes')
+            .update({ custom_folder: folderName })
+            .eq('id', draggedNodeId);
+
+          if (error) {
+            console.error("Update custom_folder failed:", error);
+          }
+        }
       }
     });
 
-    // Sub-items List Container
-    const subItemsContainer = document.createElement("div");
-    subItemsContainer.className = "pl-3 space-y-1.5 pt-1 border-l-2 border-purple-100 ml-3";
-
-    folderNodes.forEach(node => {
-      const isActiveNode = node.id === activeNodeId;
+    // Render nodes inside folder
+    itemsInFolder.forEach(node => {
+      const isSelected = activeNodeId === node.id;
+      const f = node.rawFormFields;
 
       const itemCard = document.createElement("div");
+      itemCard.className = `p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
+        isSelected 
+          ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20' 
+          : 'bg-white border-slate-200/70 hover:border-purple-200 hover:bg-slate-50/80 text-slate-800'
+      }`;
       itemCard.setAttribute("draggable", "true");
-      itemCard.className = `p-2.5 rounded-xl border transition-all cursor-grab active:cursor-grabbing space-y-1 ${isActiveNode ? 'border-purple-500 bg-purple-50/40 shadow-sm' : 'border-slate-200/80 bg-white hover:border-purple-300'}`;
-
-      const dateStr = (node.rawFormFields && node.rawFormFields.date) ? node.rawFormFields.date : "";
-      const summaryExcerpt = (node.rawFormFields && node.rawFormFields.contradiction) ? node.rawFormFields.contradiction.slice(0, 45) + "..." : "Xulosa";
 
       itemCard.innerHTML = `
-        <div class="flex justify-between items-start">
-          <div class="flex items-center space-x-1.5 text-xs font-bold text-slate-800 truncate flex-1 pr-1">
-            <svg class="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span class="truncate font-sans">${node.rawFormFields ? node.rawFormFields.studyRange : "Yozuv"}</span>
+        <div class="flex items-center space-x-2 truncate min-w-0">
+          <span class="text-xs ${isSelected ? 'text-purple-200' : 'text-slate-400'}">📄</span>
+          <div class="flex flex-col truncate">
+            <span class="text-xs font-semibold truncate font-sans">${f.studyRange}</span>
+            <span class="text-[9px] ${isSelected ? 'text-purple-200' : 'text-slate-400'} font-mono truncate">"${f.contradiction.slice(0, 30)}..."</span>
           </div>
-          <span class="text-[9px] text-slate-400 font-mono flex-shrink-0">${dateStr}</span>
         </div>
-        <div class="text-[10px] text-slate-500 font-sans truncate pl-5">
-          "${summaryExcerpt}"
+        <div class="flex items-center space-x-1 flex-shrink-0">
+          <span class="text-[9px] ${isSelected ? 'text-purple-200' : 'text-slate-400'} font-mono">${f.date}</span>
         </div>
       `;
+
+      itemCard.addEventListener("click", () => {
+        selectNode(node.id);
+        switchView("node");
+      });
 
       // Drag Start Handler
       itemCard.addEventListener("dragstart", (e) => {
         e.dataTransfer.setData("text/plain", node.id);
-        itemCard.classList.add("opacity-50", "scale-95");
+        itemCard.classList.add("opacity-50");
       });
 
       itemCard.addEventListener("dragend", () => {
-        itemCard.classList.remove("opacity-50", "scale-95");
-      });
-
-      itemCard.addEventListener("click", (e) => {
-        e.stopPropagation();
-        selectNode(node.id);
+        itemCard.classList.remove("opacity-50");
       });
 
       subItemsContainer.appendChild(itemCard);
-    });
-
-    // Toggle Expand/Collapse
-    folderHeader.addEventListener("click", () => {
-      subItemsContainer.classList.toggle("hidden");
-      const chevron = folderHeader.querySelector(".folder-chevron");
-      if (chevron) {
-        chevron.classList.toggle("rotate-180");
-      }
     });
 
     folderContainer.appendChild(folderHeader);
@@ -875,9 +962,7 @@ function renderNodeDirectory() {
   });
 }
 
-
-
-// ==================== SCRATCHPAD & SANDBOX HANDLERS ====================
+// ==================== SCRATCHPAD HANDLERS ====================
 function setupScratchpad() {
   if (btnScratchpadClear) {
     btnScratchpadClear.addEventListener("click", () => {
@@ -945,91 +1030,106 @@ function renderFormTags() {
   });
 }
 
-metricsForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+if (metricsForm) {
+  metricsForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  if (!currentUser) return;
+    if (!currentUser || !supabase) return;
 
-  const selectedTagsArray = Array.from(formSelectedTagIds);
-  
-  if (selectedTagsArray.length === 0) {
-    alert("Iltimos, ushbu yozuvga kamida bitta tegni biriktiring.");
-    return;
-  }
-
-  const formData = {
-    date: inputDate.value,
-    focusDuration: parseInt(inputDuration.value, 10),
-    studyRange: inputRange.value.trim(),
-    contradiction: inputContradiction.value.trim(),
-    scratchpadContent: scratchpadEditor ? scratchpadEditor.value.trim() : ""
-  };
-
-  try {
-    showLoading("OpenRouter AI orqali mantiqiy audit bajarilmoqda...");
-    const aiAnalysis = await fetchOpenRouterAnalysis(formData);
+    const selectedTagsArray = Array.from(formSelectedTagIds);
     
-    if (editingNodeId) {
-      showLoading("Yozuv Firestore'da yangilanmoqda...");
-      const nodeRef = doc(db, "nodes", editingNodeId);
-      await updateDoc(nodeRef, {
-        tagIds: selectedTagsArray,
-        rawFormFields: formData,
-        aiAnalysis: aiAnalysis,
-        updatedAt: new Date().toISOString()
-      });
-      editingNodeId = null;
-    } else {
-      showLoading("Seans metrikasi Firestore'ga saqlanmoqda...");
-      await addDoc(collection(db, "nodes"), {
-        tagIds: selectedTagsArray,
-        userId: currentUser.uid,
-        rawFormFields: formData,
-        aiAnalysis: aiAnalysis,
-        createdAt: new Date().toISOString()
-      });
+    if (selectedTagsArray.length === 0) {
+      alert("Iltimos, ushbu yozuvga kamida bitta tegni biriktiring.");
+      return;
     }
 
-    if (activeSyllabusId) {
-      showLoading("O'quv dasturi maqsadi yangilanmoqda...");
-      const syllabusDocRef = doc(db, "syllabus", activeSyllabusId);
-      await updateDoc(syllabusDocRef, {
-        status: 'completed'
-      });
-      unlinkSyllabusItem();
+    const formData = {
+      date: inputDate.value,
+      focusDuration: parseInt(inputDuration.value, 10) || 0,
+      studyRange: inputRange.value.trim(),
+      contradiction: inputContradiction.value.trim(),
+      scratchpadContent: scratchpadEditor ? scratchpadEditor.value.trim() : ""
+    };
+
+    try {
+      showLoading("OpenRouter AI orqali mantiqiy audit bajarilmoqda...");
+      const aiAnalysis = await fetchOpenRouterAnalysis(formData);
+      
+      if (editingNodeId) {
+        showLoading("Yozuv Supabase'da yangilanmoqda...");
+        const { error } = await supabase
+          .from('nodes')
+          .update({
+            tag_ids: selectedTagsArray,
+            study_range: formData.studyRange,
+            date: formData.date,
+            focus_duration: formData.focusDuration,
+            contradiction: formData.contradiction,
+            ai_analysis: aiAnalysis
+          })
+          .eq('id', editingNodeId);
+
+        if (error) throw error;
+        editingNodeId = null;
+      } else {
+        showLoading("Seans metrikasi Supabase'ga saqlanmoqda...");
+        const { error } = await supabase
+          .from('nodes')
+          .insert([{
+            user_id: currentUser.id,
+            tag_ids: selectedTagsArray,
+            study_range: formData.studyRange,
+            date: formData.date,
+            focus_duration: formData.focusDuration,
+            contradiction: formData.contradiction,
+            ai_analysis: aiAnalysis
+          }]);
+
+        if (error) throw error;
+      }
+
+      if (activeSyllabusId) {
+        showLoading("O'quv dasturi maqsadi yangilanmoqda...");
+        await supabase
+          .from('syllabus')
+          .update({ status: 'completed' })
+          .eq('id', activeSyllabusId);
+        unlinkSyllabusItem();
+      }
+
+      metricsForm.reset();
+      formSelectedTagIds.clear();
+      renderFormTags();
+      
+      if (inputDate) inputDate.value = new Date().toLocaleDateString('sv');
+      
+      const submitBtn = metricsForm.querySelector("button[type='submit']");
+      if (submitBtn) {
+        submitBtn.textContent = "Seans Metrikasini Saqlash";
+      }
+
+      alert("Seans metrikasi muvaffaqiyatli saqlandi va AI audit qilindi!");
+      await fetchNodes();
+    } catch (error) {
+      console.error("Save failed:", error);
+      alert("Saqlashda xatolik yuz berdi: " + error.message);
+    } finally {
+      hideLoading();
     }
+  });
+}
 
-    metricsForm.reset();
-    formSelectedTagIds.clear();
-    renderFormTags();
-    
-    inputDate.value = new Date().toLocaleDateString('sv');
-    
-    const submitBtn = metricsForm.querySelector("button[type='submit']");
-    if (submitBtn) {
-      submitBtn.textContent = "Seans Metrikasini Saqlash";
-    }
-
-    alert("Seans metrikasi muvaffaqiyatli saqlandi va AI audit qilindi!");
-  } catch (error) {
-    console.error("Save failed:", error);
-    alert("Saqlashda xatolik yuz berdi: " + error.message);
-  } finally {
-    hideLoading();
-  }
-});
-
-// ==================== OPENROUTER AI ENGINE INTEGRATION (NOTEBOOKLM GROUNDED VECTOR RAG) ====================
+// ==================== OPENROUTER AI ENGINE & VECTOR RAG SEARCH ====================
 async function fetchOpenRouterAnalysis(fields) {
   if (!CONFIG.OPENROUTER_API_KEY || CONFIG.OPENROUTER_API_KEY.trim() === "") {
-    throw new Error("OpenRouter API key is missing. Configure it inside system settings.");
+    throw new Error("OpenRouter API key missing. Please configure it in System Settings.");
   }
 
   // Perform Vector Search on Student's Xulosa against Uploaded RAG Documents
   let RAGContextText = "";
-  if (vectorStore.length > 0) {
+  if (uploadedSources.length > 0) {
     try {
-      showLoading("Vektor Bazadan (RAG) eng mos manba parchalari qidirilmoqda...");
+      showLoading("Vektor Bazadan (Supabase pgvector) eng mos manba parchalari qidirilmoqda...");
       const matchedPassages = await performVectorSearch(fields.contradiction, 3);
       if (matchedPassages.length > 0) {
         RAGContextText = matchedPassages.map((m, idx) => 
@@ -1082,7 +1182,7 @@ TALABA XULOSASI:
         "Content-Type": "application/json",
         "Authorization": `Bearer ${CONFIG.OPENROUTER_API_KEY}`,
         "HTTP-Referer": window.location.origin || "http://localhost:5000",
-        "X-Title": "Cognitive Study Logger"
+        "X-Title": "Alloma AI Cognitive Logger"
       },
       body: JSON.stringify({
         model: CONFIG.OPENROUTER_MODEL,
@@ -1117,305 +1217,223 @@ function selectNode(nodeId) {
   
   if (!node) return;
 
-  nodeTitle.textContent = node.rawFormFields.studyRange;
-  nodeDate.textContent = node.rawFormFields.date;
-  nodeDuration.textContent = node.rawFormFields.focusDuration;
-  nodeRange.textContent = node.rawFormFields.studyRange;
-  nodeContradiction.textContent = node.rawFormFields.contradiction;
+  if (nodeTitle) nodeTitle.textContent = node.rawFormFields.studyRange;
+  if (nodeDate) nodeDate.textContent = node.rawFormFields.date;
+  if (nodeDuration) nodeDuration.textContent = node.rawFormFields.focusDuration;
+  if (nodeRange) nodeRange.textContent = node.rawFormFields.studyRange;
+  if (nodeContradiction) nodeContradiction.textContent = node.rawFormFields.contradiction;
   
-  nodeTagsList.innerHTML = "";
-  if (node.tagIds && node.tagIds.length > 0) {
-    node.tagIds.forEach(id => {
-      const tag = tags.find(t => t.id === id);
-      if (tag) {
-        const pill = document.createElement("span");
-        pill.className = "tag-badge";
-        pill.textContent = `#${tag.name}`;
-        
-        // Notion styling
-        const styles = getTagStyles(tag.name);
-        pill.style.backgroundColor = styles.bg;
-        pill.style.color = styles.text;
-        pill.style.borderColor = styles.border;
-        
-        nodeTagsList.appendChild(pill);
-      }
-    });
-  } else {
-    nodeTagsList.innerHTML = `<span class="text-xs text-secondary italic">No tags linked.</span>`;
+  if (nodeAiAnalysis) {
+    nodeAiAnalysis.innerHTML = parseMarkdown(node.aiAnalysis);
   }
 
-  // Render SM-2 Status Display
+  // Populate Obsidian Editor
+  const obsidianEditor = document.getElementById("node-obsidian-editor");
+  if (obsidianEditor) {
+    obsidianEditor.value = node.obsidianContent || "";
+  }
+
+  // Render Tags List
+  if (nodeTagsList) {
+    if (node.tagIds && node.tagIds.length > 0) {
+      nodeTagsList.innerHTML = "";
+      node.tagIds.forEach(id => {
+        const tag = tags.find(t => t.id === id);
+        if (tag) {
+          const badge = document.createElement("span");
+          badge.className = "node-meta-pill";
+          badge.textContent = `#${tag.name}`;
+          nodeTagsList.appendChild(badge);
+        }
+      });
+    } else {
+      nodeTagsList.innerHTML = `<span class="text-[11px] text-slate-300 italic">Teglar yo'q</span>`;
+    }
+  }
+
+  // Update SM-2 Status Display
   const dueText = document.getElementById("sm2-next-due-text");
   if (dueText) {
     if (node.sm2 && node.sm2.nextReviewDate) {
-      dueText.textContent = `Keyingi takrorlash: ${node.sm2.nextReviewDate} (${node.sm2.interval} kundan so'ng)`;
+      dueText.textContent = `Keyingi: ${node.sm2.nextReviewDate} (${node.sm2.interval} kundan so'ng)`;
     } else {
-      dueText.textContent = `Keyingi takrorlash: Belgilanmagan`;
+      dueText.textContent = `Keyingi: —`;
     }
   }
-
-  // Obsidian Live Note Editor setup
-  const obsidianEditor = document.getElementById("node-obsidian-editor");
-  const obsidianStatus = document.getElementById("obsidian-save-status");
-  if (obsidianEditor) {
-    obsidianEditor.value = node.obsidianContent || node.rawFormFields.contradiction || "";
-    if (obsidianStatus) obsidianStatus.textContent = "Jonli tahrirlash...";
-  }
-
-  isRecallModeActive = false;
-  btnToggleRecall.textContent = "Eslashni Yoqish";
-  nodeContradiction.classList.remove("recall-blurred");
-  nodeAiAnalysis.classList.remove("recall-blurred");
-
-  nodeAiAnalysis.innerHTML = parseMarkdown(node.aiAnalysis);
 
   renderNodeDirectory();
-  switchView("node");
 }
 
-btnDeleteNode.addEventListener("click", () => {
-  if (!activeNodeId) return;
-  confirmAction(
-    "Delete Entry",
-    "Are you sure you want to permanently delete this study node log?",
-    () => executeDeleteNode(activeNodeId)
-  );
-});
+if (btnDeleteNode) {
+  btnDeleteNode.addEventListener("click", () => {
+    if (!activeNodeId) return;
+    confirmAction(
+      "Yozuvni o'chirish",
+      "Ushbu bilim tugunini qayta tiklab bo'lmaydigan qilib o'chirishni tasdiqlaysizmi?",
+      async () => {
+        try {
+          showLoading("Yozuv Supabase'dan o'chirilmoqda...");
+          const { error } = await supabase
+            .from('nodes')
+            .delete()
+            .eq('id', activeNodeId);
 
-async function executeDeleteNode(nodeId) {
-  try {
-    showLoading("Deleting Node...");
-    await deleteDoc(doc(db, "nodes", nodeId));
-    if (activeNodeId === nodeId) {
-      activeNodeId = null;
-      switchView("form");
-    }
-  } catch (error) {
-    alert("Error deleting node: " + error.message);
-  } finally {
-    hideLoading();
-  }
-}
+          if (error) throw error;
 
-// ==================== SYLLABUS PLANNER WORKSPACE ACTIONS ====================
-function setupSyllabusActions() {
-  btnSaveSyllabus.addEventListener("click", createSyllabusItem);
-  btnUnlinkSyllabus.addEventListener("click", unlinkSyllabusItem);
-}
-
-function renderSyllabusTagSelection() {
-  if (!syllabusTagSelection) return;
-  if (tags.length === 0) {
-    syllabusTagSelection.innerHTML = `<span class="text-[10px] text-slate-400 italic font-mono p-1">Mavjud teglar yo'q.</span>`;
-    return;
-  }
-
-  syllabusTagSelection.innerHTML = "";
-
-  tags.forEach(tag => {
-    const isSelected = syllabusSelectedTagIds.has(tag.id);
-
-    const selectionBadge = document.createElement("span");
-    selectionBadge.className = `form-tag-badge text-[10px] py-1 px-2.5 ${isSelected ? 'form-tag-badge-selected' : ''}`;
-    selectionBadge.textContent = `#${tag.name}`;
-    
-    const styles = getTagStyles(tag.name);
-    if (isSelected) {
-      selectionBadge.style.backgroundColor = '#a142f4';
-      selectionBadge.style.color = '#ffffff';
-      selectionBadge.style.borderColor = '#a142f4';
-    } else {
-      selectionBadge.style.backgroundColor = styles.bg;
-      selectionBadge.style.color = styles.text;
-      selectionBadge.style.borderColor = styles.border;
-    }
-
-    selectionBadge.addEventListener("click", () => {
-      if (syllabusSelectedTagIds.has(tag.id)) {
-        syllabusSelectedTagIds.delete(tag.id);
-      } else {
-        syllabusSelectedTagIds.add(tag.id);
+          activeNodeId = null;
+          switchView("form");
+          await fetchNodes();
+        } catch (err) {
+          alert("O'chirishda xatolik: " + err.message);
+        } finally {
+          hideLoading();
+        }
       }
-      renderSyllabusTagSelection();
-    });
-
-    syllabusTagSelection.appendChild(selectionBadge);
+    );
   });
 }
 
-async function createSyllabusItem() {
-  const title = inputSyllabusTitle.value.trim();
-  
-  if (!title) {
-    alert("Please enter a study range/title for the syllabus objective.");
-    return;
-  }
+// ==================== SYLLABUS PLANNER HANDLERS ====================
+function setupSyllabusActions() {
+  if (syllabusForm) {
+    syllabusForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const title = inputSyllabusTitle.value.trim();
+      if (!title || !currentUser || !supabase) return;
 
-  const selectedTagsArray = Array.from(syllabusSelectedTagIds);
+      try {
+        showLoading("Maqsad o'quv dasturiga qo'shilmoqda...");
+        const { error } = await supabase
+          .from('syllabus')
+          .insert([{
+            title: title,
+            user_id: currentUser.id,
+            status: 'pending'
+          }]);
 
-  if (selectedTagsArray.length === 0) {
-    alert("Please select at least one tag to associate with this objective.");
-    return;
-  }
-
-  try {
-    showLoading("Adding syllabus objective...");
-    await addDoc(collection(db, "syllabus"), {
-      title: title,
-      tagIds: selectedTagsArray,
-      userId: currentUser.uid,
-      status: 'pending',
-      createdAt: new Date().toISOString()
+        if (error) throw error;
+        inputSyllabusTitle.value = "";
+        await fetchSyllabus();
+      } catch (err) {
+        alert("Maqsad qo'shishda xatolik: " + err.message);
+      } finally {
+        hideLoading();
+      }
     });
+  }
 
-    inputSyllabusTitle.value = "";
-    syllabusSelectedTagIds.clear();
-    renderSyllabusTagSelection();
-  } catch (error) {
-    alert("Failed to save syllabus: " + error.message);
-  } finally {
-    hideLoading();
+  if (btnUnlinkSyllabus) {
+    btnUnlinkSyllabus.addEventListener("click", unlinkSyllabusItem);
   }
 }
 
 function renderSyllabusList() {
+  if (!syllabusList) return;
   if (syllabus.length === 0) {
     syllabusList.innerHTML = `
-      <div class="text-secondary text-xs text-center py-8 italic font-mono bg-panel rounded-lg border border-bordercol">
-        Syllabus is empty. Create your first objective above.
+      <div class="text-slate-400 text-xs text-center py-8 italic font-mono bg-slate-50/50 rounded-2xl border border-slate-100">
+        O'quv dasturi bo'sh. Birinchi maqsadingizni kiriting.
       </div>
     `;
-    syllabusProgressText.textContent = "0 Completed";
     return;
   }
 
   syllabusList.innerHTML = "";
 
-  const completedCount = syllabus.filter(item => item.status === 'completed').length;
-  syllabusProgressText.textContent = `${completedCount} of ${syllabus.length} Completed`;
-
   syllabus.forEach(item => {
     const isCompleted = item.status === 'completed';
+    const isFocused = activeSyllabusId === item.id;
+
     const card = document.createElement("div");
-    card.className = `syllabus-item-card p-4 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4 ${isCompleted ? 'syllabus-item-completed bg-neutral-200/10 dark:bg-neutral-800/10' : ''}`;
+    card.className = `p-4 rounded-2xl border transition-all flex items-center justify-between group ${
+      isCompleted 
+        ? 'bg-slate-50 border-slate-200 text-slate-400 line-through'
+        : isFocused
+          ? 'bg-purple-50 border-purple-300 text-purple-900 font-semibold shadow-sm'
+          : 'bg-white border-slate-200/80 hover:border-purple-200 text-slate-800'
+    }`;
 
-    const cardLeft = document.createElement("div");
-    cardLeft.className = "space-y-1.5 flex-1";
-
-    const titleRow = document.createElement("div");
-    titleRow.className = "flex items-center space-x-2";
-
-    const statusDot = document.createElement("span");
-    if (isCompleted) {
-      statusDot.className = "w-4 h-4 flex items-center justify-center rounded-full bg-green-500/10 border border-green-500 text-green-500 flex-shrink-0";
-      statusDot.innerHTML = `
-        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-        </svg>
-      `;
-    } else {
-      statusDot.className = "w-2.5 h-2.5 rounded-full bg-neutral-400 flex-shrink-0";
-    }
-
-    const titleSpan = document.createElement("span");
-    titleSpan.className = `text-xs font-semibold ${isCompleted ? 'line-through text-secondary' : 'text-primary'}`;
-    titleSpan.textContent = item.title;
-
-    titleRow.appendChild(statusDot);
-    titleRow.appendChild(titleSpan);
-    cardLeft.appendChild(titleRow);
-
-    const tagsRow = document.createElement("div");
-    tagsRow.className = "flex flex-wrap gap-1";
-    item.tagIds.forEach(id => {
-      const tag = tags.find(t => t.id === id);
-      if (tag) {
-        const tagSpan = document.createElement("span");
-        tagSpan.className = "tag-badge text-[9px] py-0.5 px-2";
-        tagSpan.textContent = `#${tag.name}`;
-        
-        const styles = getTagStyles(tag.name);
-        tagSpan.style.backgroundColor = styles.bg;
-        tagSpan.style.color = styles.text;
-        
-        tagsRow.appendChild(tagSpan);
-      }
-    });
-    cardLeft.appendChild(tagsRow);
-
-    const cardRight = document.createElement("div");
-    cardRight.className = "flex items-center space-x-2";
-
-    if (!isCompleted) {
-      const btnLaunch = document.createElement("button");
-      btnLaunch.className = "px-3 py-1 bg-inputbg hover:bg-neutral-200 dark:hover:bg-neutral-800 text-primary text-[10px] font-semibold rounded border border-bordercol transition-all active:scale-[0.98]";
-      btnLaunch.textContent = "Start Session";
-      btnLaunch.addEventListener("click", () => bootSyllabusStudySession(item));
-      cardRight.appendChild(btnLaunch);
-    }
-
-    const btnDelete = document.createElement("button");
-    btnDelete.className = "p-1.5 bg-inputbg text-secondary hover:text-red-500 rounded border border-bordercol hover:bg-neutral-200 dark:hover:bg-neutral-800";
-    btnDelete.title = "Delete Objective";
-    btnDelete.innerHTML = `
-      <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-      </svg>
+    card.innerHTML = `
+      <div class="flex items-center space-x-3 truncate">
+        <button class="btn-toggle-syllabus w-5 h-5 rounded-md border flex items-center justify-center text-xs font-bold transition-all ${
+          isCompleted ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-300 hover:border-purple-500'
+        }">
+          ${isCompleted ? '✓' : ''}
+        </button>
+        <span class="text-xs truncate font-sans">${item.title}</span>
+      </div>
+      <div class="flex items-center space-x-2">
+        ${!isCompleted ? `
+          <button class="btn-focus-syllabus px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+            isFocused ? 'bg-purple-600 text-white' : 'bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-700'
+          }">
+            ${isFocused ? 'Fokusda' : 'Fokuslash'}
+          </button>
+        ` : ''}
+        <button class="btn-delete-syllabus p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+        </button>
+      </div>
     `;
-    btnDelete.addEventListener("click", () => {
-      confirmAction(
-        "Delete Objective",
-        "Are you sure you want to remove this syllabus objective?",
-        () => deleteSyllabusItem(item.id)
-      );
-    });
-    cardRight.appendChild(btnDelete);
 
-    card.appendChild(cardLeft);
-    card.appendChild(cardRight);
+    const btnToggle = card.querySelector(".btn-toggle-syllabus");
+    const btnFocus = card.querySelector(".btn-focus-syllabus");
+    const btnDelete = card.querySelector(".btn-delete-syllabus");
+
+    if (btnToggle) {
+      btnToggle.addEventListener("click", async () => {
+        try {
+          const newStatus = isCompleted ? 'pending' : 'completed';
+          await supabase
+            .from('syllabus')
+            .update({ status: newStatus })
+            .eq('id', item.id);
+          await fetchSyllabus();
+        } catch (err) {
+          alert("Status o'zgarmadi: " + err.message);
+        }
+      });
+    }
+
+    if (btnFocus) {
+      btnFocus.addEventListener("click", () => {
+        activeSyllabusId = item.id;
+        if (activeSyllabusName) activeSyllabusName.textContent = item.title;
+        if (syllabusActiveNotifier) syllabusActiveNotifier.classList.remove("hidden");
+        if (inputRange) inputRange.value = item.title;
+        switchView("form");
+      });
+    }
+
+    if (btnDelete) {
+      btnDelete.addEventListener("click", async () => {
+        try {
+          await supabase
+            .from('syllabus')
+            .delete()
+            .eq('id', item.id);
+          await fetchSyllabus();
+        } catch (err) {
+          alert("O'chirishda xatolik: " + err.message);
+        }
+      });
+    }
+
     syllabusList.appendChild(card);
   });
 }
 
-async function deleteSyllabusItem(id) {
-  try {
-    showLoading("Removing syllabus objective...");
-    await deleteDoc(doc(db, "syllabus", id));
-    if (activeSyllabusId === id) {
-      unlinkSyllabusItem();
-    }
-  } catch (error) {
-    alert("Error: " + error.message);
-  } finally {
-    hideLoading();
-  }
-}
-
-function bootSyllabusStudySession(item) {
-  activeSyllabusId = item.id;
-  inputRange.value = item.title;
-  formSelectedTagIds = new Set(item.tagIds);
-  renderFormTags();
-
-  syllabusActiveNotifier.classList.remove("hidden");
-  syllabusActiveNotifier.querySelector("span").textContent = `Linked Goal: ${item.title}`;
-
-  switchView("form");
-
-  btnTimerReset.click();
-  btnTimerToggle.click();
-}
-
 function unlinkSyllabusItem() {
   activeSyllabusId = null;
-  syllabusActiveNotifier.classList.add("hidden");
-  inputRange.value = "";
+  if (syllabusActiveNotifier) syllabusActiveNotifier.classList.add("hidden");
+  if (inputRange) inputRange.value = "";
   formSelectedTagIds.clear();
   renderFormTags();
 }
 
-// ==================== MARKDOWN RENDERING SYSTEM (MARKED.JS) ====================
+// ==================== MARKDOWN RENDERING SYSTEM ====================
 function parseMarkdown(md) {
   if (!md) return '<p class="text-slate-400 italic font-mono">Tahlil ma\'lumoti mavjud emas.</p>';
   
@@ -1445,48 +1463,37 @@ function parseMarkdown(md) {
 }
 
 // ==================== REFLECTION CHAT & HISTORICAL ENGINE ====================
-chatForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const queryText = chatInput.value.trim();
-  if (!queryText) return;
+if (chatForm) {
+  chatForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const queryText = chatInput ? chatInput.value.trim() : "";
+    if (!queryText) return;
 
-  chatInput.value = "";
-  appendChatMessage("USER", queryText);
+    if (chatInput) chatInput.value = "";
+    appendChatMessage("USER", queryText);
 
-  try {
-    const loadingBubble = appendChatMessage("SYSTEM", "Scanning history metrics & formulating diagnostic feedback...");
-    const context = buildHistoryContext();
-    const answer = await queryOpenRouterChat(queryText, context);
-    
-    loadingBubble.remove();
-    appendChatMessage("SYSTEM", answer);
-  } catch (error) {
-    console.error("Chat failure:", error);
-    appendChatMessage("SYSTEM", "SYSTEM ERROR: Failed to synthesize. Details: " + error.message);
-  }
-});
-
-document.querySelectorAll(".chat-quick-prompt").forEach(btn => {
-  btn.addEventListener("click", () => {
-    chatInput.value = btn.textContent.trim();
-    chatForm.dispatchEvent(new Event("submit"));
+    try {
+      showLoading("O'quv tarixingiz tahlil qilinmoqda...");
+      const historyContext = buildHistoryContext();
+      const aiReply = await queryOpenRouterChat(queryText, historyContext);
+      appendChatMessage("ASSISTANT", aiReply);
+    } catch (err) {
+      console.error("Chat reflection error:", err);
+      appendChatMessage("ASSISTANT", `⚠️ Xatolik yuz berdi: ${err.message}`);
+    } finally {
+      hideLoading();
+    }
   });
-});
+}
 
 function appendChatMessage(sender, text) {
-  const welcomeContainer = document.getElementById("chat-welcome-container");
-  if (welcomeContainer) {
-    welcomeContainer.classList.add("hidden");
-  }
+  if (!chatMessages) return;
 
-  const container = document.createElement("div");
-  container.className = "w-full max-w-3xl flex space-x-4 py-4 animate-fade-in";
-  
   const isUser = sender === "USER";
-  const avatarBg = isUser 
-    ? 'bg-slate-200 text-slate-700 font-bold' 
-    : 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/20 font-bold';
-
+  const container = document.createElement("div");
+  container.className = `w-full max-w-2xl mx-auto my-3 flex items-start space-x-3 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`;
+  
+  const avatarBg = isUser ? 'bg-purple-600 text-white' : 'bg-slate-900 text-purple-400';
   const avatarSymbol = isUser ? 'U' : '⚡';
 
   container.innerHTML = `
@@ -1535,12 +1542,12 @@ AI Logic Summary Output: "${node.aiAnalysis || 'None'}"
 
 async function queryOpenRouterChat(userQuery, historyText) {
   if (!CONFIG.OPENROUTER_API_KEY || CONFIG.OPENROUTER_API_KEY.trim() === "") {
-    throw new Error("OpenRouter API key is missing. Configure it inside system settings.");
+    throw new Error("OpenRouter API key missing. Please configure it in System Settings.");
   }
 
   const systemPrompt = `You are a cognitive analytics chat assistant. You have access to the user's historical log of study entries (each including study dates, focus time, complex points, attention ratings, and fatigue rates).
 Your task is to analyze these historical logs to answer the user's reflection query. Make sure to:
-1. Base your arguments on historical data. Point out patterns (e.g. "your fatigue increases after 60 mins of focus", or "complex legal topics show lower attention scores on Mondays").
+1. Base your arguments on historical data. Point out patterns.
 2. Provide highly practical advice for planning future sessions.
 3. Keep your language clear, objective, and analytical.`;
 
@@ -1555,7 +1562,7 @@ Reflective Query: ${userQuery}`;
       "Content-Type": "application/json",
       "Authorization": `Bearer ${CONFIG.OPENROUTER_API_KEY}`,
       "HTTP-Referer": window.location.origin || "http://localhost:5000",
-      "X-Title": "Cognitive Study Logger Reflection"
+      "X-Title": "Alloma AI Reflection Chat"
     },
     body: JSON.stringify({
       model: CONFIG.OPENROUTER_MODEL,
@@ -1579,25 +1586,27 @@ Reflective Query: ${userQuery}`;
   }
 }
 
-// ==================== ASYNCHRONOUS SAFEGUARDS (LOADING SPINNER) ====================
+// ==================== ASYNCHRONOUS SAFEGUARDS ====================
 function showLoading(msg = "Processing...") {
-  loadingText.textContent = msg;
-  workspaceLoading.classList.remove("hidden");
+  if (loadingText) loadingText.textContent = msg;
+  if (workspaceLoading) workspaceLoading.classList.remove("hidden");
 }
 
 function hideLoading() {
-  workspaceLoading.classList.add("hidden");
+  if (workspaceLoading) workspaceLoading.classList.add("hidden");
 }
 
-// ==================== CUSTOM CONFIRMATION MODALS ====================
+// ==================== CUSTOM CONFIRMATION MODAL ====================
 function confirmAction(title, desc, onConfirm) {
   const modalCancel = document.getElementById("modal-cancel");
   const modalConfirm = document.getElementById("modal-confirm");
   const modalTitle = document.getElementById("modal-title");
   const modalDesc = document.getElementById("modal-desc");
 
-  modalTitle.textContent = title;
-  modalDesc.textContent = desc;
+  if (!confirmModal || !modalConfirm || !modalCancel) return;
+
+  if (modalTitle) modalTitle.textContent = title;
+  if (modalDesc) modalDesc.textContent = desc;
 
   confirmModal.classList.remove("hidden");
 
@@ -1622,6 +1631,8 @@ function confirmAction(title, desc, onConfirm) {
 
 // ==================== STOPWATCH TIMER MODULE ====================
 function setupTimer() {
+  if (!btnTimerToggle || !btnTimerReset || !btnTimerCommit) return;
+
   btnTimerToggle.addEventListener("click", () => {
     if (isTimerRunning) {
       clearInterval(timerInterval);
@@ -1629,8 +1640,10 @@ function setupTimer() {
       btnTimerToggle.textContent = "Resume";
       btnTimerToggle.classList.remove("bg-neutral-800", "text-white");
       btnTimerToggle.classList.add("bg-amber-500/10", "text-amber-500", "border-amber-500/20");
-      timerDot.classList.remove("bg-neutral-900", "animate-pulse");
-      timerDot.classList.add("bg-neutral-400");
+      if (timerDot) {
+        timerDot.classList.remove("bg-neutral-900", "animate-pulse");
+        timerDot.classList.add("bg-neutral-400");
+      }
     } else {
       timerInterval = setInterval(() => {
         elapsedSeconds++;
@@ -1639,9 +1652,11 @@ function setupTimer() {
       isTimerRunning = true;
       btnTimerToggle.textContent = "Pause";
       btnTimerToggle.classList.remove("bg-amber-500/10", "text-amber-500", "border-amber-500/20");
-      btnThemeToggle.classList.add("bg-neutral-800", "text-white");
-      timerDot.classList.remove("bg-neutral-400");
-      timerDot.classList.add("bg-neutral-900", "animate-pulse");
+      btnTimerToggle.classList.add("bg-neutral-800", "text-white");
+      if (timerDot) {
+        timerDot.classList.remove("bg-neutral-400");
+        timerDot.classList.add("bg-neutral-900", "animate-pulse");
+      }
     }
   });
 
@@ -1653,21 +1668,24 @@ function setupTimer() {
     btnTimerToggle.textContent = "Start";
     btnTimerToggle.classList.remove("bg-amber-500/10", "text-amber-500", "border-amber-500/20");
     btnTimerToggle.classList.add("bg-neutral-800", "text-white");
-    timerDot.classList.remove("bg-neutral-900", "animate-pulse");
-    timerDot.classList.add("bg-neutral-400");
+    if (timerDot) {
+      timerDot.classList.remove("bg-neutral-900", "animate-pulse");
+      timerDot.classList.add("bg-neutral-400");
+    }
   });
 
   btnTimerCommit.addEventListener("click", () => {
     if (elapsedSeconds === 0) {
-      alert("No time has elapsed to commit.");
+      alert("Hali hech qanday vaqt o'tmadi.");
       return;
     }
     const minutes = Math.ceil(elapsedSeconds / 60);
-    inputDuration.value = minutes;
+    if (inputDuration) inputDuration.value = minutes;
   });
 }
 
 function updateTimerDisplay() {
+  if (!timerDisplay) return;
   const min = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
   const sec = (elapsedSeconds % 60).toString().padStart(2, '0');
   timerDisplay.textContent = `${min}:${sec}`;
@@ -1683,14 +1701,14 @@ function setupRecallMode() {
       btnToggleRecall.textContent = "Javobni Ko'rish";
       btnToggleRecall.classList.remove("bg-inputbg", "text-primary");
       btnToggleRecall.classList.add("bg-neutral-900", "text-white");
-      nodeContradiction.classList.add("recall-blurred");
-      nodeAiAnalysis.classList.add("recall-blurred");
+      if (nodeContradiction) nodeContradiction.classList.add("recall-blurred");
+      if (nodeAiAnalysis) nodeAiAnalysis.classList.add("recall-blurred");
     } else {
       btnToggleRecall.textContent = "Eslashni Yoqish";
       btnToggleRecall.classList.remove("bg-neutral-900", "text-white");
       btnToggleRecall.classList.add("bg-inputbg", "text-primary");
-      nodeContradiction.classList.remove("recall-blurred");
-      nodeAiAnalysis.classList.remove("recall-blurred");
+      if (nodeContradiction) nodeContradiction.classList.remove("recall-blurred");
+      if (nodeAiAnalysis) nodeAiAnalysis.classList.remove("recall-blurred");
     }
   });
 
@@ -1703,7 +1721,8 @@ function setupRecallMode() {
     btnEditNode.addEventListener("click", editActiveNode);
   }
 }
-// ==================== DRAG & DROP SOURCE INGESTION & VECTOR RAG ENGINE ====================
+
+// ==================== DRAG & DROP RAG FILE INGESTION ====================
 function setupDragDropIngestion() {
   const dragDropZone = document.getElementById("drag-drop-zone");
   const fileInputSource = document.getElementById("file-input-source");
@@ -1739,72 +1758,104 @@ function setupDragDropIngestion() {
 }
 
 async function processUploadedSourceFiles(files) {
+  if (!supabase || !currentUser) {
+    alert("Supabase client active masofaviy ulanishi yo'q.");
+    return;
+  }
+
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    const sourceId = Date.now() + Math.random().toString(36).substring(2, 5);
     
     try {
       showLoading(`'${file.name}' manbasidan matn o'qilmoqda...`);
       const { pages, pageCount } = await parseFileToPages(file);
 
-      showLoading(`'${file.name}' bo'laklanmoqda (Boundary Chunking)...`);
+      showLoading(`'${file.name}' bo'laklanmoqda (500-char boundary chunking)...`);
       const chunks = chunkPagesWithOverlap(pages, file.name);
 
-      showLoading(`'${file.name}' Vektor Bazaga (RAG) indekslanmoqda...`);
+      showLoading(`'${file.name}' Supabase PostgreSQL RAG Bazasiga saqlanmoqda...`);
       
-      // Add source document with initial PROCESSING status
-      uploadedSources.push({
-        id: sourceId,
-        fileName: file.name,
-        pageCount: pageCount,
-        chunkCount: chunks.length,
-        status: 'PROCESSING',
-        errorMessage: null
-      });
-      renderUploadedSources();
+      // Add source document record to Supabase
+      const { data: sourceData, error: sourceErr } = await supabase
+        .from('sources')
+        .insert([{
+          user_id: currentUser.id,
+          filename: file.name,
+          status: 'PROCESSING',
+          page_count: pageCount,
+          chunk_count: chunks.length
+        }])
+        .select();
+
+      if (sourceErr || !sourceData || !sourceData[0]) {
+        throw new Error("Manba yozuvini yaratishda xatolik: " + (sourceErr?.message || ""));
+      }
+
+      const dbSourceId = sourceData[0].id;
+      await fetchSources();
       
-      // Process embeddings with retry mechanism
+      // Process embeddings with retry mechanism (5 attempts, exponential backoff)
+      const chunkRecords = [];
       let embeddingErrors = 0;
+
       for (let chunk of chunks) {
         try {
-          chunk.embedding = await generateEmbedding(chunk.text, sourceId);
-          vectorStore.push(chunk);
+          const embedding = await generateEmbedding(chunk.text, dbSourceId);
+          chunkRecords.push({
+            source_id: dbSourceId,
+            user_id: currentUser.id,
+            text_content: chunk.text,
+            citation: `[Manba: ${file.name}, p. ${chunk.pageNum}]`,
+            chunk_index: chunk.chunkIndex,
+            embedding: embedding
+          });
         } catch (chunkErr) {
           embeddingErrors++;
           console.warn(`Chunk embedding failed:`, chunkErr);
         }
       }
-      
-      // Update source status to COMPLETED or ERROR based on results
-      const sourceDoc = uploadedSources.find(s => s.id === sourceId);
-      if (sourceDoc) {
-        if (embeddingErrors === chunks.length) {
-          sourceDoc.status = 'ERROR';
-          sourceDoc.errorMessage = `All ${chunks.length} chunks failed embedding generation`;
-        } else if (embeddingErrors > 0) {
-          sourceDoc.status = 'PARTIAL';
-          sourceDoc.errorMessage = `${embeddingErrors}/${chunks.length} chunks failed`;
-        } else {
-          sourceDoc.status = 'COMPLETED';
+
+      if (chunkRecords.length > 0) {
+        const { error: chunkInsertErr } = await supabase
+          .from('document_chunks')
+          .insert(chunkRecords);
+
+        if (chunkInsertErr) {
+          console.error("document_chunks insert error:", chunkInsertErr);
         }
-        renderUploadedSources();
       }
+      
+      // Update source document status
+      if (embeddingErrors === chunks.length) {
+        await supabase
+          .from('sources')
+          .update({
+            status: 'ERROR',
+            source_error_message: `Barcha ${chunks.length} parchalarda embedding generation 5 urinishdan so'ng muvaffaqiyatsiz yakunlandi`
+          })
+          .eq('id', dbSourceId);
+      } else if (embeddingErrors > 0) {
+        await supabase
+          .from('sources')
+          .update({
+            status: 'PARTIAL',
+            source_error_message: `${embeddingErrors}/${chunks.length} parchalarda embedding xatosi`
+          })
+          .eq('id', dbSourceId);
+      } else {
+        await supabase
+          .from('sources')
+          .update({ status: 'SUCCESS' })
+          .eq('id', dbSourceId);
+      }
+
+      await fetchSources();
     } catch (err) {
       console.error(`Fayl yuklashda xatolik (${file.name}):`, err);
-      
-      // Mark source as ERROR
-      const sourceDoc = uploadedSources.find(s => s.id === sourceId);
-      if (sourceDoc) {
-        sourceDoc.status = 'ERROR';
-        sourceDoc.errorMessage = err.message;
-        renderUploadedSources();
-      }
-      
-      alert(`'${file.name}' faylini o'qishda xatolik yuz berdi: ` + err.message);
+      alert(`'${file.name}' faylini o'qishda xatolik: ` + err.message);
     }
   }
 
-  renderUploadedSources();
   hideLoading();
 }
 
@@ -1868,12 +1919,11 @@ function chunkPagesWithOverlap(pages, fileName) {
   let globalChunkIndex = 0;
 
   pages.forEach(({ pageNum, text }) => {
-    // Sentence & paragraph boundary delimiters
     const sentences = text.split(/(?<=[.?!;])\s+/);
     let currentChunkText = "";
 
     sentences.forEach((sentence) => {
-      if ((currentChunkText + sentence).length > 550 && currentChunkText.length > 0) {
+      if ((currentChunkText + sentence).length > 500 && currentChunkText.length > 0) {
         chunks.push({
           id: `${fileName}-p${pageNum}-c${globalChunkIndex}`,
           fileName: fileName,
@@ -1882,8 +1932,8 @@ function chunkPagesWithOverlap(pages, fileName) {
           text: currentChunkText.trim()
         });
 
-        // 120-character sliding window overlap
-        const overlapText = currentChunkText.slice(-120);
+        // 50-character sliding window overlap
+        const overlapText = currentChunkText.slice(-50);
         currentChunkText = overlapText + " " + sentence;
       } else {
         currentChunkText += (currentChunkText ? " " : "") + sentence;
@@ -1904,6 +1954,7 @@ function chunkPagesWithOverlap(pages, fileName) {
   return chunks;
 }
 
+// Resilient Embedding Generator with 5 Retries and Exponential Backoff
 async function generateEmbedding(text, sourceDocId = null) {
   const MAX_RETRIES = 5;
   const BASE_DELAY_MS = 1000;
@@ -1918,7 +1969,7 @@ async function generateEmbedding(text, sourceDocId = null) {
             "Authorization": `Bearer ${CONFIG.OPENROUTER_API_KEY}`
           },
           body: JSON.stringify({
-            model: "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+            model: CONFIG.EMBEDDING_MODEL,
             input: text.slice(0, 1000)
           })
         });
@@ -1930,7 +1981,6 @@ async function generateEmbedding(text, sourceDocId = null) {
           }
         }
         
-        // If response is not ok, throw error to trigger retry
         throw new Error(`API returned status ${response.status}: ${response.statusText}`);
       } else {
         throw new Error("OpenRouter API key not configured");
@@ -1938,104 +1988,67 @@ async function generateEmbedding(text, sourceDocId = null) {
     } catch (e) {
       console.warn(`Embedding API attempt ${attempt}/${MAX_RETRIES} failed:`, e.message);
       
-      // If this is the last attempt, handle failure
       if (attempt === MAX_RETRIES) {
-        console.error(`All ${MAX_RETRIES} embedding API attempts failed. Final error:`, e.message);
+        console.error(`All ${MAX_RETRIES} embedding API attempts failed:`, e.message);
         
-        // Update source document status to ERROR if sourceDocId is provided
-        if (sourceDocId && uploadedSources.length > 0) {
-          const sourceDoc = uploadedSources.find(s => s.id === sourceDocId);
-          if (sourceDoc) {
-            sourceDoc.status = 'ERROR';
-            sourceDoc.errorMessage = `Embedding generation failed after ${MAX_RETRIES} attempts: ${e.message}`;
-            renderUploadedSources();
-          }
+        if (sourceDocId && supabase) {
+          await supabase
+            .from('sources')
+            .update({
+              status: 'ERROR',
+              source_error_message: `Embedding generation failed after ${MAX_RETRIES} attempts: ${e.message}`
+            })
+            .eq('id', sourceDocId);
         }
         
-        // Fallback to TF-IDF vector
-        return buildTfidfVector(text);
+        throw e;
       }
       
-      // Exponential backoff: delay = BASE_DELAY * 2^(attempt-1)
       const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      console.log(`Retrying in ${delayMs}ms...`);
+      console.log(`Retrying embedding in ${delayMs}ms...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
-  
-  // This should never be reached due to the logic above, but included for safety
-  return buildTfidfVector(text);
 }
 
-function buildTfidfVector(text) {
-  const words = text.toLowerCase().match(/\b\w{3,}\b/g) || [];
-  const freq = {};
-  words.forEach(w => freq[w] = (freq[w] || 0) + 1);
-  return freq;
-}
-
-function cosineSimilarity(vecA, vecB) {
-  if (Array.isArray(vecA) && Array.isArray(vecB)) {
-    let dot = 0, normA = 0, normB = 0;
-    for (let i = 0; i < vecA.length; i++) {
-      dot += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
-  }
-
-  const keys = new Set([...Object.keys(vecA || {}), ...Object.keys(vecB || {})]);
-  let dot = 0, normA = 0, normB = 0;
-  keys.forEach(k => {
-    const valA = vecA[k] || 0;
-    const valB = vecB[k] || 0;
-    dot += valA * valB;
-    normA += valA * valA;
-    normB += valB * valB;
-  });
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
-}
-
+// Vector Search using Supabase pgvector RPC function (match_document_chunks)
 async function performVectorSearch(queryXulosa, topK = 3) {
-  if (vectorStore.length === 0) return [];
+  if (!supabase || !currentUser) return [];
 
-  const queryEmbedding = await generateEmbedding(queryXulosa);
+  try {
+    const queryEmbedding = await generateEmbedding(queryXulosa);
 
-  const scored = vectorStore.map(chunk => {
-    const score = cosineSimilarity(queryEmbedding, chunk.embedding);
-    return { chunk, score };
-  });
+    // Call Supabase RPC match_document_chunks
+    const { data, error } = await supabase.rpc('match_document_chunks', {
+      query_embedding: queryEmbedding,
+      match_count: topK,
+      filter_user_id: currentUser.id
+    });
 
-  scored.sort((a, b) => b.score - a.score);
-  const topMatches = scored.slice(0, topK);
+    if (error) {
+      console.warn("RPC match_document_chunks failed:", error);
+      return [];
+    }
 
-  // Neighbor Context Expansion (#N-1, #N, #N+1)
-  const expandedResults = [];
-  const seenChunkIds = new Set();
-
-  topMatches.forEach(({ chunk, score }) => {
-    const prevChunk = vectorStore.find(c => c.fileName === chunk.fileName && c.chunkIndex === chunk.chunkIndex - 1);
-    const nextChunk = vectorStore.find(c => c.fileName === chunk.fileName && c.chunkIndex === chunk.chunkIndex + 1);
-
-    const passage = [
-      prevChunk ? `[... ${prevChunk.text.slice(-80)}]` : '',
-      `"${chunk.text}"`,
-      nextChunk ? `[${nextChunk.text.slice(0, 80)} ...]` : ''
-    ].filter(Boolean).join(" ");
-
-    if (!seenChunkIds.has(chunk.id)) {
-      seenChunkIds.add(chunk.id);
-      expandedResults.push({
-        fileName: chunk.fileName,
-        pageNum: chunk.pageNum,
-        score: score,
-        passage: passage
+    if (data && data.length > 0) {
+      return data.map(item => {
+        let fileName = "Manba";
+        if (item.citation) {
+          const m = item.citation.match(/\[Manba:\s*([^,]+)/i);
+          if (m) fileName = m[1].trim();
+        }
+        return {
+          fileName: fileName,
+          pageNum: item.chunk_index ? item.chunk_index + 1 : 1,
+          score: item.similarity || 0.85,
+          passage: item.text_content
+        };
       });
     }
-  });
-
-  return expandedResults;
+  } catch (e) {
+    console.warn("Vector search exception:", e);
+  }
+  return [];
 }
 
 function renderUploadedSources() {
@@ -2056,7 +2069,6 @@ function renderUploadedSources() {
   uploadedSources.forEach(src => {
     const card = document.createElement("div");
     
-    // Status-based styling
     let statusColor = "bg-purple-50 text-purple-700 border-purple-200";
     let statusIcon = "✓";
     if (src.status === 'ERROR') {
@@ -2097,10 +2109,10 @@ function editActiveNode() {
   editingNodeId = node.id;
   const f = node.rawFormFields;
   
-  inputDate.value = f.date || new Date().toLocaleDateString('sv');
-  inputDuration.value = f.focusDuration || "";
-  inputRange.value = f.studyRange || "";
-  inputContradiction.value = f.contradiction || "";
+  if (inputDate) inputDate.value = f.date || new Date().toLocaleDateString('sv');
+  if (inputDuration) inputDuration.value = f.focusDuration || "";
+  if (inputRange) inputRange.value = f.studyRange || "";
+  if (inputContradiction) inputContradiction.value = f.contradiction || "";
   
   formSelectedTagIds.clear();
   (node.tagIds || []).forEach(id => formSelectedTagIds.add(id));
@@ -2108,7 +2120,7 @@ function editActiveNode() {
   
   switchView("form");
   
-  const submitBtn = metricsForm.querySelector("button[type='submit']");
+  const submitBtn = metricsForm ? metricsForm.querySelector("button[type='submit']") : null;
   if (submitBtn) {
     submitBtn.textContent = "Seans Metrikasini Yangilash (Update Log)";
   }
@@ -2148,52 +2160,49 @@ ${node.aiAnalysis}
     const safeTitle = node.rawFormFields.studyRange
       .replace(/[^a-z0-9]/gi, '_')
       .toLowerCase()
-      .slice(0, 30);
-      
-    const filename = `node-${node.rawFormFields.date}-${safeTitle}.md`;
+      .slice(0, 40);
     
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `node_${safeTitle}_${node.rawFormFields.date}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error("Markdown export failed:", error);
-    alert("Failed to export markdown: " + error.message);
+  } catch (err) {
+    alert("Export failed: " + err.message);
   }
 }
 
+// ==================== SETTINGS HANDLER ====================
 function setupSettingsHandlers() {
+  if (!btnSaveSettings) return;
+
   btnSaveSettings.addEventListener("click", () => {
-    const key = inputSettingsKey.value.trim();
-    const model = inputSettingsModel.value.trim();
+    const key = inputSettingsKey ? inputSettingsKey.value.trim() : "";
+    const model = inputSettingsModel ? inputSettingsModel.value.trim() : "";
     
-    // Save to localStorage
     localStorage.setItem("openrouter_api_key", key);
     localStorage.setItem("openrouter_model", model);
     
-    // Update global CONFIG
     CONFIG.OPENROUTER_API_KEY = key;
-    CONFIG.OPENROUTER_MODEL = model || "meta-llama/llama-3-8b-instruct:free";
+    CONFIG.OPENROUTER_MODEL = model || "meta-llama/llama-3.3-70b-instruct:free";
     
-    // Show success status
-    settingsStatusMessage.classList.remove("hidden");
-    setTimeout(() => {
-      settingsStatusMessage.classList.add("hidden");
-    }, 3000);
+    if (settingsStatusMessage) {
+      settingsStatusMessage.classList.remove("hidden");
+      setTimeout(() => {
+        settingsStatusMessage.classList.add("hidden");
+      }, 3000);
+    }
   });
 }
-
-
 
 // ==================== SM-2 SPACED REPETITION EVENT HANDLERS ====================
 function setupSM2Handlers() {
   const sm2Buttons = document.querySelectorAll(".btn-sm2-grade");
   sm2Buttons.forEach(btn => {
     btn.addEventListener("click", async () => {
-      if (!activeNodeId) return;
+      if (!activeNodeId || !supabase) return;
       const grade = parseInt(btn.dataset.grade, 10);
       
       const node = nodes.find(n => n.id === activeNodeId);
@@ -2203,16 +2212,19 @@ function setupSM2Handlers() {
       const nextSm2 = calculateSM2(grade, currentSm2.interval, currentSm2.easeFactor, currentSm2.reviewCount);
 
       try {
-        showLoading("SM-2 Takrorlash Bahosi Saqlanmoqda...");
-        const nodeRef = doc(db, "nodes", activeNodeId);
-        await updateDoc(nodeRef, {
-          sm2: nextSm2
-        });
+        showLoading("SM-2 Takrorlash Bahosi Supabase'ga Saqlanmoqda...");
+        const { error } = await supabase
+          .from('nodes')
+          .update({ sm2: nextSm2 })
+          .eq('id', activeNodeId);
 
-        // Update UI Display
+        if (error) throw error;
+
+        node.sm2 = nextSm2;
+
         const dueText = document.getElementById("sm2-next-due-text");
         if (dueText) {
-          dueText.textContent = `Keyingi takrorlash: ${nextSm2.nextReviewDate} (${nextSm2.interval} kundan so'ng)`;
+          dueText.textContent = `Keyingi: ${nextSm2.nextReviewDate} (${nextSm2.interval} kundan so'ng)`;
         }
         alert(`SM-2 Takrorlash belgilandi! Keyingi takrorlash sanasi: ${nextSm2.nextReviewDate} (${nextSm2.interval} kun).`);
         renderNodeDirectory();
@@ -2252,7 +2264,6 @@ function setupSM2Handlers() {
         </div>
       `;
 
-      const chatMessages = document.getElementById("chat-messages");
       if (chatMessages) {
         const msgDiv = document.createElement("div");
         msgDiv.className = "w-full max-w-2xl mx-auto my-3";
@@ -2276,7 +2287,7 @@ function setupVSCodeToolbar() {
   if (btnNewFile) {
     btnNewFile.addEventListener("click", () => {
       editingNodeId = null;
-      metricsForm.reset();
+      if (metricsForm) metricsForm.reset();
       formSelectedTagIds.clear();
       renderFormTags();
       switchView("form");
@@ -2301,21 +2312,19 @@ function setupVSCodeToolbar() {
 
   if (btnSaveFolder) {
     btnSaveFolder.addEventListener("click", () => {
-      const folderName = inputFolderName.value.trim();
+      const folderName = inputFolderName ? inputFolderName.value.trim() : "";
       if (!folderName) return;
 
-      // Check if folder already exists
       if (userFolders.includes(folderName)) {
         alert(`'${folderName}' papkasi allaqachon mavjud.`);
         return;
       }
 
-      // Save to local state & localStorage (no Firestore node created)
       userFolders.push(folderName);
       localStorage.setItem('userFolders', JSON.stringify(userFolders));
 
-      inputFolderName.value = "";
-      inlineFolderForm.classList.add("hidden");
+      if (inputFolderName) inputFolderName.value = "";
+      if (inlineFolderForm) inlineFolderForm.classList.add("hidden");
       renderNodeDirectory();
     });
   }
@@ -2347,26 +2356,33 @@ function setupFormTagCreator() {
 
   async function saveCustomTagFromForm() {
     const tagName = inputFormCustomTag ? inputFormCustomTag.value.trim() : "";
-    if (!tagName) return;
+    if (!tagName || !currentUser || !supabase) return;
 
     const existingTag = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
     if (existingTag) {
       formSelectedTagIds.add(existingTag.id);
       renderFormTags();
-      formInlineContainer.classList.add("hidden");
-      inputFormCustomTag.value = "";
+      if (formInlineContainer) formInlineContainer.classList.add("hidden");
+      if (inputFormCustomTag) inputFormCustomTag.value = "";
       return;
     }
 
     try {
       showLoading("Yangi teg yaratilmoqda...");
-      const docRef = await addDoc(collection(db, "tags"), {
-        name: tagName,
-        userId: currentUser.uid,
-        createdAt: new Date().toISOString()
-      });
+      const { data, error } = await supabase
+        .from('tags')
+        .insert([{
+          name: tagName,
+          user_id: currentUser.id
+        }])
+        .select();
 
-      formSelectedTagIds.add(docRef.id);
+      if (error) throw error;
+
+      if (data && data[0]) {
+        formSelectedTagIds.add(data[0].id);
+        await fetchTags();
+      }
       renderFormTags();
       if (inputFormCustomTag) inputFormCustomTag.value = "";
       if (formInlineContainer) formInlineContainer.classList.add("hidden");
@@ -2400,19 +2416,21 @@ function setupObsidianLiveEditor() {
   let autoSaveTimeout = null;
 
   async function saveObsidianContent() {
-    if (!activeNodeId || !obsidianEditor) return;
+    if (!activeNodeId || !obsidianEditor || !supabase) return;
     const content = obsidianEditor.value;
     const node = nodes.find(n => n.id === activeNodeId);
     if (!node) return;
 
     try {
       if (obsidianStatus) obsidianStatus.textContent = "Saqlanmoqda...";
-      const nodeRef = doc(db, "nodes", activeNodeId);
-      await updateDoc(nodeRef, {
-        obsidianContent: content
-      });
+      const { error } = await supabase
+        .from('nodes')
+        .update({ obsidian_content: content })
+        .eq('id', activeNodeId);
+
+      if (error) throw error;
       node.obsidianContent = content;
-      if (obsidianStatus) obsidianStatus.textContent = "✦ Saqlandi";
+      if (obsidianStatus) obsidianStatus.textContent = "✦ Saqlendi";
     } catch (err) {
       if (obsidianStatus) obsidianStatus.textContent = "Saqlashda xatolik";
       console.error("Obsidian save failed:", err);
