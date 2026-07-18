@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="uz" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alloma AI — Akademik Tahlil va Manba Tizimi</title>
+  
+  <!-- Typography: Instrument Serif, Outfit, Inter & Fira Code -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;850&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            geminiBlue: '#1a73e8',
+            geminiPurple: '#a142f4',
+            geminiPink: '#f43f5e',
+            slateDark: '#0f172a',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+            serif: ['Instrument Serif', 'serif'],
+            mono: ['Fira Code', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- GSAP Animation Engine CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+  <!-- Marked.js Full Markdown & Table Parser CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- PDF.js PDF Parser CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window['pdfjs-dist/build/pdf']) {
+      window.pdfjsLib = window['pdfjs-dist/build/pdf'];
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+
+  <!-- Mammoth.js Word (.docx) Parser CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="h-full bg-[#f8fafc] text-slate-800 font-sans antialiased overflow-hidden selection:bg-purple-500/20">
+
+  <!-- ==================== LOGIN OVERLAY ==================== -->
+  <div id="login-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-white/90 backdrop-blur-md transition-all duration-350">
+    <div class="w-full max-w-md p-8 rounded-3xl bg-white border border-slate-200 shadow-2xl shadow-purple-500/10 relative overflow-hidden text-center">
+      <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-purple-600 to-pink-500 flex items-center justify-center text-white font-bold text-xl mx-auto mb-4 shadow-md shadow-purple-500/20">
+        ✦
+      </div>
+      <h1 class="font-sans font-extrabold text-2xl text-slate-900 mb-3 tracking-tight">
+        Empower Learning with <span class="text-gradient font-extrabold">Alloma AI</span>
+      </h1>
+      <p class="text-xs text-slate-500 mb-8 max-w-xs mx-auto leading-relaxed">
+        Manba hujjatlaringizni o'qish, vektorli audit qilish va intellektual bilim tugunlarini yaratish tizimi.
+      </p>
+      <button id="btn-login" class="w-full flex items-center justify-center py-3.5 px-6 btn-pill-primary text-sm font-bold shadow-lg shadow-purple-500/25 active:scale-[0.98] transition-all">
+        <svg class="w-4 h-4 mr-3" viewBox="0 0 24 24">
+          <path fill="#EA4335" d="M12 5.04c1.67 0 3.2.58 4.38 1.69l3.27-3.27C17.68 1.54 14.98 1 12 1 7.35 1 3.4 3.65 1.5 7.5l3.86 3c.9-2.7 3.4-4.46 6.64-4.46z" />
+          <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.27H12v4.51h6.45c-.29 1.48-1.14 2.73-2.4 3.58l3.71 2.87c2.17-2 3.43-4.94 3.43-8.69z" />
+          <path fill="#FBBC05" d="M5.36 10.5c-.24-.72-.38-1.5-.38-2.3 0-.8.14-1.58.38-2.3L1.5 2.9C.54 4.82 0 6.98 0 9.2c0 2.22.54 4.38 1.5 6.3l3.86-3z" />
+          <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.71-2.87c-1.04.7-2.38 1.12-4.25 1.12-3.24 0-5.74-1.76-6.64-4.46L1.49 16.9C3.4 20.75 7.35 23 12 23z" />
+        </svg>
+        Google orqali kirish
+      </button>
+      <div id="login-error" class="hidden mt-4 p-3 rounded-xl border border-red-200 bg-red-50 text-red-600 text-xs text-center font-mono"></div>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN WORKSPACE ROOT ==================== -->
+  <div id="app-container" class="hidden flex h-screen max-h-screen w-full overflow-hidden relative z-10 p-3 md:p-4 gap-4 max-w-[1600px] mx-auto box-border">
+    
+    <!-- ==================== FLOATING COLLAPSIBLE SIDEBAR ==================== -->
+    <aside id="main-sidebar" class="w-72 h-full max-h-full flex-shrink-0 taste-panel flex flex-col justify-between overflow-hidden transition-all duration-300 relative box-border">
+      
+      <!-- Top Navigation Header -->
+      <div class="p-4 border-b border-slate-100 space-y-3 flex-shrink-0">
+        <!-- Brand Logo & Sidebar Collapse Toggle -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2.5 overflow-hidden">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 via-purple-600 to-pink-500 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-md shadow-purple-500/20">
+              ✦
+            </div>
+            <span class="text-xs font-black tracking-wider text-slate-900 uppercase font-display sidebar-label">Alloma AI</span>
+          </div>
+
+          <button id="btn-toggle-sidebar" class="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Boshqaruv paneli hajmiga o'tish">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="space-y-1">
+          <button id="nav-new-entry" class="w-full flex items-center px-3.5 py-2.5 rounded-full text-xs font-semibold text-slate-600 hover:text-purple-700 hover:bg-purple-50 transition-all border border-transparent">
+            <svg class="w-4 h-4 mr-2.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            <span class="sidebar-label">Yangi Yozuv Qo'shish</span>
+          </button>
+          <button id="nav-syllabus-planner" class="w-full flex items-center px-3.5 py-2.5 rounded-full text-xs font-semibold text-slate-600 hover:text-purple-700 hover:bg-purple-50 transition-all border border-transparent">
+            <svg class="w-4 h-4 mr-2.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <span class="sidebar-label">O'quv Dasturi</span>
+          </button>
+          <button id="nav-analytics-chat" class="w-full flex items-center px-3.5 py-2.5 rounded-full text-xs font-semibold text-slate-600 hover:text-purple-700 hover:bg-purple-50 transition-all border border-transparent">
+            <svg class="w-4 h-4 mr-2.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span class="sidebar-label">Tahlil va AI Chat</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- VS Code Style Directory Header & Toolbar -->
+      <div id="sidebar-directory-wrapper" class="flex-1 flex flex-col overflow-hidden min-h-0 sidebar-label">
+        <div class="px-4 py-2 border-b border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50/50">
+          <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider font-sans">SAQLANGAN YOZUVLAR</span>
+          
+          <!-- VS Code Style File/Folder Creator Buttons -->
+          <div class="flex items-center space-x-1">
+
+            <button id="btn-vscode-new-folder" class="p-1 hover:bg-purple-100/70 text-slate-600 hover:text-purple-700 rounded-md transition-all flex items-center space-x-1 text-[10px] font-bold" title="Yangi Papka Yaratish">
+              <svg class="w-3.5 h-3.5 text-purple-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9-1V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+            </button>
+            
+            <button id="btn-clear-filters" class="hidden text-purple-600 hover:underline capitalize text-[9px] font-medium ml-1">Tozalash</button>
+          </div>
+        </div>
+
+        <!-- Inline Folder Creator Form -->
+        <div id="inline-folder-form" class="hidden px-3 py-2 bg-purple-50/70 border-b border-purple-100 flex-shrink-0">
+          <div class="flex items-center space-x-1.5 bg-white border border-purple-200 rounded-xl p-1 shadow-sm">
+            <input type="text" id="input-folder-name" placeholder="Yangi papka nomi..." class="w-full bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-none px-2 font-mono">
+            <button id="btn-save-folder" class="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold rounded-lg transition-all">
+              Yaratish
+            </button>
+            <button id="btn-cancel-folder" class="p-1 text-slate-400 hover:bg-slate-100 rounded-lg">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- Expandable Folder Directory Container with HTML5 Drag & Drop -->
+        <div id="node-directory" class="flex-1 overflow-y-auto px-3 py-2.5 space-y-2 custom-scrollbar">
+          <div class="text-slate-400 text-xs text-center py-6 italic font-mono">
+            Yozuvlar topilmadi.
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Profile Banner -->
+      <div id="sidebar-profile" class="p-3.5 border-t border-slate-100 bg-slate-50/60 cursor-pointer hover:bg-purple-50/50 transition-all duration-200 flex-shrink-0 z-10" title="Tizim Sozlamalari">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-3 overflow-hidden">
+            <img id="user-avatar" class="w-8 h-8 rounded-full border border-purple-200 shadow-sm flex-shrink-0" src="" alt="Profil">
+            <div class="overflow-hidden sidebar-label">
+              <h2 id="user-name" class="text-xs font-bold text-slate-800 truncate">Yuklanmoqda...</h2>
+              <span class="text-[9px] text-purple-600 font-mono flex items-center font-semibold">
+                <span class="w-1.5 h-1.5 rounded-full bg-purple-600 mr-1.5 animate-pulse"></span>
+                Talaba
+              </span>
+            </div>
+          </div>
+          <svg class="w-4 h-4 text-slate-400 flex-shrink-0 sidebar-label" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ==================== MAIN WORKSPACE CONTAINER ==================== -->
+    <main id="workspace" class="flex-1 h-full max-h-full flex flex-col overflow-hidden relative box-border">
+      
+      <!-- ==================== VIEW 1: COGNITIVE INPUT SPLIT-WORKSPACE ==================== -->
+      <section id="view-form" class="hidden flex-1 h-full max-h-full flex flex-col md:flex-row overflow-hidden gap-4 md:gap-6 box-border">
+        
+        <!-- Left Pane: Reading Sandbox & Drag and Drop Document Ingestion -->
+        <div class="flex-1 flex flex-col overflow-hidden taste-panel">
+          <header class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <span class="text-xs font-extrabold text-slate-800 font-sans uppercase tracking-wider">Mutolaa Sandboxi & Manbalar</span>
+          </header>
+          
+          <div class="flex-1 p-5 flex flex-col space-y-3 overflow-y-auto custom-scrollbar">
+            
+            <!-- Drag and Drop Source Ingestion Dock -->
+            <div id="drag-drop-zone" class="p-4 border-2 border-dashed border-purple-200 hover:border-purple-400 bg-purple-50/40 hover:bg-purple-50/80 rounded-2xl transition-all text-center cursor-pointer relative flex-shrink-0">
+              <input type="file" id="file-input-source" accept=".pdf,.docx,.txt" multiple class="hidden">
+              <div class="flex flex-col items-center justify-center space-y-1.5">
+                <div class="w-9 h-9 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shadow-sm">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <div class="text-xs font-bold text-slate-800">
+                  Manba PDF yoki Word (.docx) Fayllarini Tashlang
+                </div>
+                <p class="text-[10px] text-slate-500 font-mono">
+                  AI avtomatik bo'laklab, Vektor Bazaga (RAG) indekslaydi
+                </p>
+              </div>
+            </div>
+
+            <!-- Uploaded Source Documents Status Cards -->
+            <div id="sources-list-container" class="space-y-2 hidden flex-shrink-0">
+              <span class="text-[9px] font-bold text-purple-600 font-mono uppercase tracking-widest block">Yuklangan Manbalar (Vectorized)</span>
+              <div id="sources-list" class="flex flex-col space-y-1.5"></div>
+            </div>
+
+            <textarea id="scratchpad-editor" placeholder="O'qiyotgan matnlaringiz, qonun moddalari yoki konspektlaringizni shu yerga joylashtiring..." class="flex-1 min-h-[160px] w-full bg-slate-50/50 border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-2xl p-4 focus:outline-none transition-all custom-scrollbar font-mono leading-relaxed resize-none"></textarea>
+            
+            <div class="text-[9px] text-slate-400 font-mono flex justify-between flex-shrink-0">
+              <span>MUTOLAA SANDBOXI</span>
+              <span>Markdown Qo'llab-quvvatlanadi</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Pane: Metric Form Station -->
+        <div class="flex-shrink-0 w-full md:w-[440px] flex flex-col overflow-y-auto custom-scrollbar taste-panel p-6 space-y-5">
+          <header class="border-b border-slate-100 pb-3">
+            <h2 class="text-xs md:text-sm font-extrabold text-slate-800 font-sans uppercase tracking-wider">Yangi Seansni Ro'yxatdan O'tkazish</h2>
+          </header>
+
+          <!-- Minimalist Deep Work Stopwatch / Timer -->
+          <div class="p-4 rounded-2xl bg-gradient-to-br from-purple-50/60 to-indigo-50/60 border border-purple-100 flex items-center justify-between gap-3">
+            <div class="flex items-center space-x-2">
+              <span id="timer-dot" class="w-2 h-2 rounded-full bg-purple-600 animate-pulse"></span>
+            </div>
+            <div class="flex items-center space-x-3">
+              <div id="timer-display" class="text-base font-black font-mono text-purple-900 bg-white px-3 py-1 rounded-xl border border-purple-200 shadow-sm">00:00</div>
+              <div class="flex items-center space-x-1.5">
+                <button type="button" id="btn-timer-toggle" class="btn-pill-primary px-3 py-1 text-[10px]">
+                  Boshlash
+                </button>
+                <button type="button" id="btn-timer-reset" class="btn-pill-secondary px-2.5 py-1 text-[10px]">
+                  Qayta o'rnatish
+                </button>
+                <button type="button" id="btn-timer-commit" class="btn-pill-secondary px-2.5 py-1 text-[10px]" title="Daqiqaga yozish">
+                  Yozish
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Form Interface Container -->
+          <form id="metrics-form" class="space-y-4">
+            <!-- Active syllabus objective notification banner -->
+            <div id="syllabus-active-notifier" class="hidden p-3 rounded-2xl border border-purple-200 bg-purple-50 text-purple-800 text-[10px] font-mono flex items-center justify-between">
+              <span>Bog'langan O'quv Maqsadi</span>
+              <button type="button" id="btn-unlink-syllabus" class="text-[9px] font-bold underline uppercase text-purple-700 hover:text-purple-900">Ajratish</button>
+            </div>
+
+            <div class="space-y-3">
+              <!-- Date input -->
+              <div class="flex flex-col space-y-1">
+                <label for="input-date" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Seans Sanasi</label>
+                <input type="date" id="input-date" required class="bg-white border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-xl px-3.5 py-2.5 focus:outline-none transition-all shadow-sm">
+              </div>
+              
+              <!-- Focus duration -->
+              <div class="flex flex-col space-y-1">
+                <label for="input-duration" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Fokus Davomiyligi (Daqiqa)</label>
+                <input type="number" id="input-duration" min="1" max="999" required placeholder="60" class="bg-white border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-xl px-3.5 py-2.5 focus:outline-none transition-all shadow-sm">
+              </div>
+
+              <!-- Study Range -->
+              <div class="flex flex-col space-y-1">
+                <label for="input-range" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Ko'rib Chiqilgan Mavzu / Manba</label>
+                <input type="text" id="input-range" required placeholder="masalan: Fuqarolik Kodeksi, 5-modda" class="bg-white border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-xl px-3.5 py-2.5 focus:outline-none transition-all shadow-sm">
+              </div>
+            </div>
+
+            <!-- Associated Tags Multi-Selection Grid with Inline Creator (+) -->
+            <div class="p-4 rounded-2xl bg-slate-50/50 border border-slate-200 space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Teglar</label>
+                <button type="button" id="btn-form-toggle-tag" class="text-xs font-bold text-purple-600 hover:bg-purple-100/60 px-2 py-0.5 rounded-lg transition-all flex items-center space-x-1">
+                  <span>+ Teg Qo'shish</span>
+                </button>
+              </div>
+
+              <!-- Form Inline Tag Creator Input Field -->
+              <div id="form-inline-tag-container" class="hidden p-2 bg-white rounded-xl border border-purple-200 space-y-2 shadow-sm">
+                <div class="flex items-center space-x-1.5">
+                  <input type="text" id="input-form-custom-tag" placeholder="Yangi teg..." class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-purple-400 font-mono">
+                  <button type="button" id="btn-form-save-custom-tag" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold rounded-lg transition-all">Saqlash</button>
+                  <button type="button" id="btn-form-cancel-custom-tag" class="px-2 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px]">Bekor</button>
+                </div>
+              </div>
+
+              <div id="form-tag-selection" class="flex flex-wrap gap-1.5 pt-1">
+                <span class="text-xs text-slate-400 italic">Mavjud teglar yo'q.</span>
+              </div>
+            </div>
+
+            <!-- Textarea: Critical contradiction / bottleneck -->
+            <div class="flex flex-col space-y-1">
+              <label for="input-contradiction" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Xulosa</label>
+              <textarea id="input-contradiction" required rows="5" placeholder="Mavzu bo'yicha xulosa va muhim fikrlaringizni yozing..." class="w-full bg-white border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-2xl p-4 focus:outline-none transition-all custom-scrollbar font-mono leading-relaxed shadow-sm"></textarea>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" class="w-full py-3.5 btn-pill-primary text-xs font-bold shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all uppercase tracking-wider">
+              Seans Metrikasini Saqlash
+            </button>
+          </form>
+        </div>
+
+      </section>
+
+      <!-- ==================== VIEW 2: SYLLABUS PLANNER WORKSPACE ==================== -->
+      <section id="view-syllabus" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl w-full mx-auto space-y-8 custom-scrollbar taste-panel">
+        <header class="border-b border-slate-100 pb-5">
+          <span class="text-[9px] font-bold text-purple-600 font-mono tracking-widest uppercase mb-1 block">Rejalashtirgich</span>
+          <h2 class="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">O'quv Dasturi</h2>
+          <p class="text-xs text-slate-500 mt-2 font-mono">
+            Maqsadlarni belgilang, teglarni bog'lang va to'g'ridan-to'g'ri timer bilan mashg'ulotni boshlang.
+          </p>
+        </header>
+
+        <!-- Dynamic Syllabus Goal Builder Card -->
+        <div class="p-6 rounded-2xl bg-slate-50/50 border border-slate-200 space-y-4">
+          <h3 class="text-xs font-bold text-slate-800 uppercase font-mono border-b border-slate-200 pb-2">Yangi Maqsad Qo'shish</h3>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex flex-col space-y-1">
+              <label for="input-syllabus-title" class="text-[10px] font-bold text-slate-500 uppercase font-mono">Maqsad / O'rganiladigan Mavzu</label>
+              <input type="text" id="input-syllabus-title" placeholder="masalan: Jinoyat Huquqi: Moddiy va Ma'naviy Elementlar" class="bg-white border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-xl px-3.5 py-2.5 focus:outline-none transition-all shadow-sm">
+            </div>
+            
+            <div class="flex flex-col space-y-1">
+              <label class="text-[10px] font-bold text-slate-500 uppercase font-mono">Mavzu Teglarini Bog'lash</label>
+              <div id="syllabus-tag-selection" class="flex flex-wrap gap-1.5 border border-slate-200 bg-white rounded-xl p-2 min-h-[42px] shadow-sm">
+                <span class="text-[10px] text-slate-400 italic font-mono p-1">Mavjud teglar yo'q.</span>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-save-syllabus" class="btn-pill-primary px-5 py-2.5 text-xs font-bold uppercase tracking-wider">
+            Maqsad Qo'shish
+          </button>
+        </div>
+
+        <!-- Syllabus Items List Panel -->
+        <div class="space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Dastur Maqsadlari Indeksi</h4>
+            <span id="syllabus-progress-text" class="text-[9px] font-mono text-purple-600 font-bold">0 Bajarildi</span>
+          </div>
+
+          <div id="syllabus-list" class="space-y-2.5">
+              <div class="text-slate-400 text-xs text-center py-8 italic font-mono bg-slate-50/50 rounded-2xl border border-slate-100">
+              O'quv dasturi bo'sh. Birinchi maqsadingizni kiriting.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 3: NODE VIEWER — Two-Column Workspace ==================== -->
+      <section id="view-node" class="hidden flex-1 overflow-y-auto custom-scrollbar" style="background:#fafafa;">
+        <div class="w-full mx-auto px-8 py-10" style="max-width:1120px;">
+
+          <!-- ══ Two-Column Grid ══ -->
+          <div style="display:grid; grid-template-columns:1fr 340px; gap:32px; align-items:start;">
+
+            <!-- ▐ LEFT COLUMN — Writing Workspace ▐ -->
+            <div class="space-y-6" style="min-width:0;">
+
+              <!-- Breadcrumb -->
+              <div class="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
+                <span>Yozuvlar</span>
+                <span class="text-slate-300">/</span>
+                <span id="node-range" class="text-slate-500">Kiritilmagan</span>
+              </div>
+
+              <!-- Title -->
+              <h1 id="node-title" class="text-[28px] font-semibold text-slate-900 tracking-[-0.02em] leading-tight" style="font-family:'Inter',sans-serif; margin-top:4px;">Node Summary</h1>
+
+              <!-- Meta Pills -->
+              <div class="flex flex-wrap items-center gap-2.5">
+                <span class="node-meta-pill">
+                  <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  <span id="node-date">2026-07-18</span>
+                </span>
+                <span class="node-meta-pill">
+                  <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <span id="node-duration">0</span> daq
+                </span>
+                <div id="node-tags-list" class="flex flex-wrap gap-1.5">
+                  <span class="text-[11px] text-slate-300 italic">Teglar yo'q</span>
+                </div>
+              </div>
+
+              <!-- ── Qaydlar Card ── -->
+              <div class="node-card">
+                <div class="flex items-center justify-between mb-4">
+                  <span class="node-card-label">Qaydlar</span>
+                  <div class="flex items-center gap-2">
+                    <span id="obsidian-save-status" class="text-[10px] text-slate-300 font-mono">Avtosaqlash</span>
+                    <button id="btn-save-obsidian-note" class="node-action-btn text-[10px] py-1 px-2.5">Saqlash</button>
+                  </div>
+                </div>
+                <textarea id="node-obsidian-editor" rows="8" placeholder="Notelaringiz, qo'shimcha konspektlar va fikrlaringizni shu yerda yozing..."
+                  class="node-canvas-textarea"></textarea>
+              </div>
+
+              <!-- ── Xulosa Card ── -->
+              <div class="node-card">
+                <span class="node-card-label mb-4 inline-block">Xulosa</span>
+                <p id="node-contradiction" class="text-[13px] text-slate-700 leading-[1.75] whitespace-pre-wrap" style="font-family:'Inter',sans-serif;"></p>
+              </div>
+
+              <!-- ── AI Audit Natijasi ── -->
+              <div class="node-card">
+                <div class="flex items-center gap-1.5 mb-4">
+                  <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  <span class="node-card-label">AI Audit Natijasi</span>
+                </div>
+                <div id="node-ai-analysis" class="markdown-render text-[12px] leading-[1.7] text-slate-600">
+                </div>
+              </div>
+
+            </div>
+
+            <!-- ▐ RIGHT COLUMN — Analytical Sidebar ▐ -->
+            <div class="space-y-5" style="min-width:0; position:sticky; top:40px;">
+
+              <!-- ── Action Buttons ── -->
+              <div class="node-card" style="padding:12px 16px;">
+                <div class="flex flex-wrap gap-1.5">
+                  <button id="btn-socratic-grill" class="node-action-btn" title="Sokratik imtihon">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4-1h8M12 4a7 7 0 017 7"/></svg>
+                    <span>Sokrat Imtihon</span>
+                  </button>
+                  <button id="btn-edit-node" class="node-action-btn" title="Tahrirlash">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    <span>O'zgartirish</span>
+                  </button>
+                  <button id="btn-export-node" class="node-action-btn" title="MD eksport">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    <span>Eksport</span>
+                  </button>
+                  <button id="btn-delete-node" class="node-action-btn node-action-btn--danger" title="O'chirish">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    <span>O'chirish</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- ── SM-2 Takrorlash ── -->
+              <div id="sm2-rating-container" class="node-card">
+                <div class="flex items-center justify-between mb-3">
+                  <span class="node-card-label">Takrorlash bahosi</span>
+                  <span id="sm2-next-due-text" class="text-[10px] text-slate-400 font-mono">Keyingi: —</span>
+                </div>
+                <div class="space-y-2">
+                  <button type="button" class="btn-sm2-grade sm2-chip sm2-chip--hard w-full" data-grade="1">
+                    Qiyin · 1 kun
+                  </button>
+                  <button type="button" class="btn-sm2-grade sm2-chip sm2-chip--medium w-full" data-grade="3">
+                    O'rtacha · 6 kun
+                  </button>
+                  <button type="button" class="btn-sm2-grade sm2-chip sm2-chip--easy w-full" data-grade="5">
+                    Oson · +15 kun
+                  </button>
+                </div>
+              </div>
+
+              <!-- ── Active Recall ── -->
+              <div class="node-card" style="padding:14px 16px;">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-[12px] font-semibold text-slate-700">Faol Eslash</span>
+                    <p class="text-[10px] text-slate-400 mt-0.5">Xotirangizni sinab ko'ring</p>
+                  </div>
+                  <button id="btn-toggle-recall" class="node-action-btn text-[11px]">Yoqish</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 4: HISTORIC AI CHAT (GEMINI CANVAS) ==================== -->
+      <section id="view-chat" class="hidden flex-1 flex flex-col overflow-hidden taste-panel justify-between items-center relative w-full h-full">
+        <header class="w-full p-4 border-b border-slate-100/80 bg-white/60 backdrop-blur-md flex items-center justify-between flex-shrink-0">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+            <span class="text-xs font-extrabold text-slate-900 uppercase tracking-wider font-sans">Tahlillar va AI Chat</span>
+          </div>
+        </header>
+
+        <div id="chat-messages" class="flex-1 w-full overflow-y-auto px-4 py-6 custom-scrollbar flex flex-col items-center">
+          <div id="chat-welcome-container" class="my-auto flex flex-col items-center justify-center text-center max-w-2xl px-4 py-8 space-y-6">
+            <div class="space-y-2">
+              <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+                Salom, <span class="text-gradient font-extrabold">Tadqiqotchi</span>
+              </h2>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+              <button class="chat-quick-prompt px-4 py-2 text-xs font-semibold bg-purple-50/80 hover:bg-purple-100/90 text-purple-900 border border-purple-100 rounded-full shadow-sm transition-all duration-150 active:scale-95">
+                Haftalik Xulosani Yaratish
+              </button>
+              <button class="chat-quick-prompt px-4 py-2 text-xs font-semibold bg-purple-50/80 hover:bg-purple-100/90 text-purple-900 border border-purple-100 rounded-full shadow-sm transition-all duration-150 active:scale-95">
+                Charchash Nuqtasini Aniqlash
+              </button>
+              <button class="chat-quick-prompt px-4 py-2 text-xs font-semibold bg-purple-50/80 hover:bg-purple-100/90 text-purple-900 border border-purple-100 rounded-full shadow-sm transition-all duration-150 active:scale-95">
+                Mantiqiy Qiyinchiliklarni Audit Qilish
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="w-full flex justify-center p-4 pt-2 flex-shrink-0 bg-gradient-to-t from-white via-white/80 to-transparent">
+          <div class="w-full max-w-3xl">
+            <form id="chat-form" class="relative flex items-center w-full bg-white border border-slate-200/90 rounded-full p-2 pl-6 shadow-xl shadow-purple-500/5 hover:border-purple-300 focus-within:border-purple-500 focus-within:ring-4 focus-within:ring-purple-500/10 transition-all duration-200">
+              <input type="text" id="chat-input" placeholder="Tarixiy tendensiyalar yoki manbalar bo'yicha savol bering..." required class="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none pr-12 font-sans font-normal">
+              <button type="submit" id="btn-chat-send" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 via-purple-600 to-pink-500 hover:opacity-95 text-white flex items-center justify-center shadow-md shadow-purple-500/20 active:scale-95 transition-all duration-150" title="Savol yuborish">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+                </svg>
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 5: SYSTEM SETTINGS ==================== -->
+      <section id="view-settings" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl w-full mx-auto space-y-8 custom-scrollbar taste-panel">
+        <header class="border-b border-slate-100 pb-6">
+          <span class="text-[9px] font-bold text-purple-600 font-mono tracking-widest uppercase mb-1 block">Boshqaruv Paneli</span>
+          <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Tizim Sozlamalari</h2>
+          <p class="text-xs text-slate-500 mt-2 font-mono">
+            Foydalanuvchi profilingizni va AI dvigateli model kalitlarini boshqaring.
+          </p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div class="p-6 rounded-2xl bg-slate-50/50 border border-slate-200 space-y-6">
+            <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider border-b border-slate-200 pb-2 font-mono">Profil Sozlamalari</h3>
+            
+            <div class="flex items-center space-x-4">
+              <img id="settings-avatar" class="w-14 h-14 rounded-full border-2 border-purple-300 shadow-md shadow-purple-500/10" src="" alt="Profil">
+              <div>
+                <h4 id="settings-name" class="text-base font-bold text-slate-900">Yuklanmoqda...</h4>
+                <p id="settings-email" class="text-xs text-slate-500 font-mono">Yuklanmoqda...</p>
+              </div>
+            </div>
+
+            <div class="space-y-3 pt-2 text-xs font-mono text-slate-500">
+              <div class="flex justify-between py-1.5 border-b border-slate-200/60">
+                <span>Akkount Provayderi</span>
+                <span class="text-slate-900 font-bold">Google Auth</span>
+              </div>
+              <div class="flex justify-between py-1.5 border-b border-slate-200/60">
+                <span>Foydalanuvchi ID</span>
+                <span id="settings-uid" class="text-slate-900 font-bold truncate max-w-[180px]">Yuklanmoqda...</span>
+              </div>
+            </div>
+
+            <button id="btn-settings-logout" class="w-full py-3 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 font-bold rounded-full transition-all text-xs uppercase tracking-wider active:scale-[0.98]">
+              Tizimdan Chiqish
+            </button>
+          </div>
+
+          <div class="p-6 rounded-2xl bg-slate-50/50 border border-slate-200 space-y-4">
+            <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider border-b border-slate-200 pb-2 font-mono">AI Dvigateli Sozlamalari</h3>
+            
+            <div class="flex flex-col space-y-1">
+              <label for="input-settings-key" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">OpenRouter API Kaliti</label>
+              <input type="password" id="input-settings-key" placeholder="sk-or-v1-..." class="bg-white border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-xl px-3.5 py-2.5 focus:outline-none transition-all font-mono shadow-sm">
+            </div>
+
+            <div class="flex flex-col space-y-1">
+              <label for="input-settings-model" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Tahlil Modeli ID</label>
+              <input type="text" id="input-settings-model" placeholder="meta-llama/llama-3-8b-instruct:free" class="bg-white border border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10 text-xs text-slate-800 rounded-xl px-3.5 py-2.5 focus:outline-none transition-all font-mono shadow-sm">
+            </div>
+
+            <button id="btn-save-settings" class="w-full py-3 btn-pill-primary text-xs font-bold uppercase tracking-wider shadow-md shadow-purple-500/20 active:scale-[0.98]">
+              Sozlamalarni Saqlash
+            </button>
+            
+            <div id="settings-status-message" class="hidden text-[10px] font-mono text-purple-700 text-center bg-purple-50 border border-purple-200 p-2 rounded-xl">
+              AI Sozlamalari saqlandi.
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ==================== ASYNCHRONOUS OVERLAY / SPINNER ==================== -->
+      <div id="workspace-loading" class="hidden absolute inset-0 z-40 flex flex-col items-center justify-center bg-white/85 backdrop-blur-md transition-all duration-300">
+        <div class="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+        <p id="loading-text" class="text-xs font-mono tracking-widest text-slate-500 uppercase mt-3 font-bold">Hisob-kitoblar bajarilmoqda...</p>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- ==================== GENERIC CONFIRMATION MODAL ==================== -->
+  <div id="confirm-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+    <div class="w-full max-w-sm p-6 rounded-3xl bg-white border border-slate-200 shadow-2xl relative">
+      <h3 id="modal-title" class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-2 font-mono">Tasdiqlaysizmi?</h3>
+      <p id="modal-desc" class="text-xs text-slate-500 leading-relaxed mb-6">Ushbu amalni ortga qaytarib bo'lmaydi.</p>
+      <div class="flex space-x-3 justify-end">
+        <button id="modal-cancel" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 rounded-full transition-all">
+          Bekor qilish
+        </button>
+        <button id="modal-confirm" class="px-5 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-full transition-all uppercase shadow-md shadow-red-500/20">
+          O'chirish
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modular Firebase SDKs & App Logic via type="module" -->
+  <script type="module" src="app.js"></script>
+
+</body>
+</html>

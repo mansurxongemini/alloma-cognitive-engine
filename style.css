@@ -1,0 +1,423 @@
+/* ==================== TASTE SKILL AUDITED FRONTEND DESIGN SYSTEM ==================== */
+
+:root {
+  --bg-workspace: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-input: #ffffff;
+  --border-color: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  
+  /* Gemini Brand Signature Colors */
+  --gemini-blue: #1a73e8;
+  --gemini-purple: #a142f4;
+  --gemini-pink: #f43f5e;
+  
+  --gemini-gradient: linear-gradient(135deg, #1a73e8 0%, #a142f4 50%, #f43f5e 100%);
+  --gemini-text-gradient: linear-gradient(135deg, #1a73e8 0%, #8e24aa 45%, #e52592 100%);
+}
+
+/* Base Canvas & Typography - Strictly Constrained 100vh Viewport */
+*, ::before, ::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: var(--bg-workspace);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  height: 100vh;
+  max-height: 100vh;
+  width: 100vw;
+  max-width: 100vw;
+  overflow: hidden !important;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+/* Sidebar Collapsed State */
+.sidebar-collapsed {
+  overflow: hidden !important;
+}
+.sidebar-collapsed .taste-panel {
+  padding: 0;
+}
+.sidebar-collapsed #sidebar-profile {
+  justify-content: center;
+  padding: 0.75rem;
+}
+.sidebar-collapsed #sidebar-profile img {
+  margin: 0 auto;
+}
+
+/* Academic Instrument Serif Font Utility */
+.font-editorial {
+  font-family: 'Instrument Serif', Georgia, serif;
+}
+
+/* Custom Sleek Scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 99px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 66, 244, 0.4);
+}
+
+/* Text Gradient Utility */
+.text-gradient {
+  background: var(--gemini-text-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Taste Skill Audited Floating Panels */
+.taste-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.04);
+  border-radius: 24px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.taste-panel:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 30px -4px rgba(15, 23, 42, 0.07);
+}
+
+/* Iridescent Pill Buttons */
+.btn-pill-primary {
+  background: linear-gradient(135deg, #1a73e8 0%, #a142f4 50%, #f43f5e 100%);
+  background-size: 200% 200%;
+  animation: geminiGlow 6s ease infinite;
+  color: #ffffff;
+  border-radius: 99px;
+  font-weight: 600;
+  box-shadow: 0 6px 18px -3px rgba(161, 66, 244, 0.25);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes geminiGlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.btn-pill-primary:hover {
+  box-shadow: 0 10px 22px -3px rgba(161, 66, 244, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-pill-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-pill-secondary {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 99px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-pill-secondary:hover {
+  border-color: #a142f4;
+  color: #8e24aa;
+  background: #fdf4ff;
+  transform: translateY(-0.5px);
+}
+
+.btn-pill-secondary:active {
+  transform: scale(0.98);
+}
+
+/* Tag Capsules & Form Tag Badge Styles */
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.tag-badge-active {
+  box-shadow: 0 0 0 1.5px #a142f4 inset !important;
+  font-weight: 700 !important;
+}
+
+.form-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 99px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.form-tag-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(0,0,0,0.05);
+}
+
+.form-tag-badge-selected {
+  background-color: #a142f4 !important;
+  color: #ffffff !important;
+  border-color: #a142f4 !important;
+  box-shadow: 0 4px 14px -2px rgba(161, 66, 244, 0.35) !important;
+  font-weight: 700 !important;
+}
+
+/* Active Recall Blur */
+.recall-blurred {
+  filter: blur(14px) grayscale(40%);
+  opacity: 0.25;
+  pointer-events: none;
+  user-select: none;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Markdown Render Styles */
+.markdown-render h1, .markdown-render h2 {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-render h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #8e24aa;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-render p {
+  margin-top: 0.35rem;
+  margin-bottom: 0.6rem;
+  line-height: 1.65;
+  color: #334155;
+}
+
+.markdown-render ul, .markdown-render ol {
+  margin-top: 0.35rem;
+  margin-bottom: 0.6rem;
+  padding-left: 1.25rem;
+}
+
+.markdown-render li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  color: #334155;
+}
+
+.markdown-render strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.markdown-render table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 0.8rem;
+  border: none;
+  background-color: transparent;
+}
+
+.markdown-render th {
+  background-color: transparent;
+  color: #64748b;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.markdown-render td {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.markdown-render tr:nth-child(even) {
+  background-color: #fafbfc;
+}
+
+.markdown-render tr:hover {
+  background-color: #f5f6f8;
+}
+
+/* ==================== NODE VIEWER — Notion/Linear Design System ==================== */
+
+/* Ghost Action Buttons */
+.node-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: 'Inter', sans-serif;
+  white-space: nowrap;
+}
+
+.node-action-btn:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.node-action-btn:active {
+  transform: scale(0.97);
+}
+
+.node-action-btn--danger {
+  color: #94a3b8;
+}
+
+.node-action-btn--danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+/* SM-2 Segmented Chips */
+.sm2-chip {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: 'Inter', sans-serif;
+  border: 1px solid #e8ecf1;
+  background: #ffffff;
+  color: #475569;
+}
+
+.sm2-chip:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.sm2-chip:active {
+  transform: scale(0.97);
+}
+
+.sm2-chip--hard:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.sm2-chip--medium:hover {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #d97706;
+}
+
+.sm2-chip--easy:hover {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #16a34a;
+}
+
+/* Seamless Canvas Blocks */
+.node-canvas-block {
+  background: #ffffff;
+  border: 1px solid #eef0f4;
+  border-radius: 10px;
+  padding: 20px 24px;
+  color: #334155;
+}
+
+.node-canvas-textarea {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #eef0f4;
+  border-radius: 10px;
+  padding: 20px 24px;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  color: #1e293b;
+  line-height: 1.75;
+  resize: vertical;
+  min-height: 120px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+}
+
+.node-canvas-textarea::placeholder {
+  color: #cbd5e1;
+  font-weight: 400;
+}
+
+.node-canvas-textarea:focus {
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.08);
+}
+
+/* Node Card Containers */
+.node-card {
+  background: #ffffff;
+  border: 1px solid #eef0f4;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03), 0 1px 2px rgba(15, 23, 42, 0.02);
+}
+
+.node-card-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: 'Inter', sans-serif;
+}
+
+.node-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #64748b;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  background: #ffffff;
+  border: 1px solid #e8ecf1;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
