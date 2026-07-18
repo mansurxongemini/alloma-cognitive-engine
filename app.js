@@ -1,17 +1,27 @@
 // ==================== GLOBAL CONFIGURATION ====================
 const CONFIG = {
   FIREBASE: {
-    apiKey: "AIzaSyDR5anZs5fIwGhxSbG69FfLi-91Hs7a70E",
-    authDomain: "audit-my-plan.firebaseapp.com",
-    projectId: "audit-my-plan",
-    storageBucket: "audit-my-plan.firebasestorage.app",
-    messagingSenderId: "966629605516",
-    appId: "1:966629605516:web:c07e23d07e22d431247ba9",
-    measurementId: "G-LD97F1FMRP"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "audit-my-plan.firebaseapp.com",
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "audit-my-plan",
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "audit-my-plan.firebasestorage.app",
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "966629605516",
+    appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:966629605516:web:c07e23d07e22d431247ba9",
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-LD97F1FMRP"
   },
-  OPENROUTER_API_KEY: "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",
-  OPENROUTER_MODEL: "nvidia/nemotron-3-ultra-550b-a55b:free"
+  OPENROUTER_API_KEY: import.meta.env.VITE_OPENROUTER_API_KEY || "",
+  OPENROUTER_MODEL: import.meta.env.VITE_OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
+  VECTOR_DB_URL: import.meta.env.VITE_VECTOR_DB_URL || "",
+  VECTOR_DB_API_KEY: import.meta.env.VITE_VECTOR_DB_API_KEY || ""
 };
+
+// Environment variable fallback for browser-based deployment
+if (typeof window !== 'undefined' && window.process?.env) {
+  if (window.process.env.VITE_FIREBASE_API_KEY) CONFIG.FIREBASE.apiKey = window.process.env.VITE_FIREBASE_API_KEY;
+  if (window.process.env.VITE_OPENROUTER_API_KEY) CONFIG.OPENROUTER_API_KEY = window.process.env.VITE_OPENROUTER_API_KEY;
+  if (window.process.env.VITE_VECTOR_DB_URL) CONFIG.VECTOR_DB_URL = window.process.env.VITE_VECTOR_DB_URL;
+  if (window.process.env.VITE_VECTOR_DB_API_KEY) CONFIG.VECTOR_DB_API_KEY = window.process.env.VITE_VECTOR_DB_API_KEY;
+}
 
 // ==================== FIREBASE MODULAR CDN IMPORTS ====================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
@@ -1731,6 +1741,8 @@ function setupDragDropIngestion() {
 async function processUploadedSourceFiles(files) {
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
+    const sourceId = Date.now() + Math.random().toString(36).substring(2, 5);
+    
     try {
       showLoading(`'${file.name}' manbasidan matn o'qilmoqda...`);
       const { pages, pageCount } = await parseFileToPages(file);
@@ -1739,19 +1751,55 @@ async function processUploadedSourceFiles(files) {
       const chunks = chunkPagesWithOverlap(pages, file.name);
 
       showLoading(`'${file.name}' Vektor Bazaga (RAG) indekslanmoqda...`);
-      for (let chunk of chunks) {
-        chunk.embedding = await generateEmbedding(chunk.text);
-        vectorStore.push(chunk);
-      }
-
+      
+      // Add source document with initial PROCESSING status
       uploadedSources.push({
-        id: Date.now() + Math.random().toString(36).substring(2, 5),
+        id: sourceId,
         fileName: file.name,
         pageCount: pageCount,
-        chunkCount: chunks.length
+        chunkCount: chunks.length,
+        status: 'PROCESSING',
+        errorMessage: null
       });
+      renderUploadedSources();
+      
+      // Process embeddings with retry mechanism
+      let embeddingErrors = 0;
+      for (let chunk of chunks) {
+        try {
+          chunk.embedding = await generateEmbedding(chunk.text, sourceId);
+          vectorStore.push(chunk);
+        } catch (chunkErr) {
+          embeddingErrors++;
+          console.warn(`Chunk embedding failed:`, chunkErr);
+        }
+      }
+      
+      // Update source status to COMPLETED or ERROR based on results
+      const sourceDoc = uploadedSources.find(s => s.id === sourceId);
+      if (sourceDoc) {
+        if (embeddingErrors === chunks.length) {
+          sourceDoc.status = 'ERROR';
+          sourceDoc.errorMessage = `All ${chunks.length} chunks failed embedding generation`;
+        } else if (embeddingErrors > 0) {
+          sourceDoc.status = 'PARTIAL';
+          sourceDoc.errorMessage = `${embeddingErrors}/${chunks.length} chunks failed`;
+        } else {
+          sourceDoc.status = 'COMPLETED';
+        }
+        renderUploadedSources();
+      }
     } catch (err) {
       console.error(`Fayl yuklashda xatolik (${file.name}):`, err);
+      
+      // Mark source as ERROR
+      const sourceDoc = uploadedSources.find(s => s.id === sourceId);
+      if (sourceDoc) {
+        sourceDoc.status = 'ERROR';
+        sourceDoc.errorMessage = err.message;
+        renderUploadedSources();
+      }
+      
       alert(`'${file.name}' faylini o'qishda xatolik yuz berdi: ` + err.message);
     }
   }
@@ -1856,32 +1904,66 @@ function chunkPagesWithOverlap(pages, fileName) {
   return chunks;
 }
 
-async function generateEmbedding(text) {
-  if (CONFIG.OPENROUTER_API_KEY && CONFIG.OPENROUTER_API_KEY.trim() !== "") {
+async function generateEmbedding(text, sourceDocId = null) {
+  const MAX_RETRIES = 5;
+  const BASE_DELAY_MS = 1000;
+  
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${CONFIG.OPENROUTER_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "nvidia/llama-nemotron-embed-vl-1b-v2:free",
-          input: text.slice(0, 1000)
-        })
-      });
+      if (CONFIG.OPENROUTER_API_KEY && CONFIG.OPENROUTER_API_KEY.trim() !== "") {
+        const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${CONFIG.OPENROUTER_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+            input: text.slice(0, 1000)
+          })
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data && data.data[0] && data.data[0].embedding) {
-          return data.data[0].embedding;
+        if (response.ok) {
+          const data = await response.json();
+          if (data.data && data.data[0] && data.data[0].embedding) {
+            return data.data[0].embedding;
+          }
         }
+        
+        // If response is not ok, throw error to trigger retry
+        throw new Error(`API returned status ${response.status}: ${response.statusText}`);
+      } else {
+        throw new Error("OpenRouter API key not configured");
       }
     } catch (e) {
-      console.warn("OpenRouter Embedding API fallback to TF-IDF vector:", e);
+      console.warn(`Embedding API attempt ${attempt}/${MAX_RETRIES} failed:`, e.message);
+      
+      // If this is the last attempt, handle failure
+      if (attempt === MAX_RETRIES) {
+        console.error(`All ${MAX_RETRIES} embedding API attempts failed. Final error:`, e.message);
+        
+        // Update source document status to ERROR if sourceDocId is provided
+        if (sourceDocId && uploadedSources.length > 0) {
+          const sourceDoc = uploadedSources.find(s => s.id === sourceDocId);
+          if (sourceDoc) {
+            sourceDoc.status = 'ERROR';
+            sourceDoc.errorMessage = `Embedding generation failed after ${MAX_RETRIES} attempts: ${e.message}`;
+            renderUploadedSources();
+          }
+        }
+        
+        // Fallback to TF-IDF vector
+        return buildTfidfVector(text);
+      }
+      
+      // Exponential backoff: delay = BASE_DELAY * 2^(attempt-1)
+      const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`Retrying in ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
-
+  
+  // This should never be reached due to the logic above, but included for safety
   return buildTfidfVector(text);
 }
 
@@ -1973,15 +2055,35 @@ function renderUploadedSources() {
 
   uploadedSources.forEach(src => {
     const card = document.createElement("div");
+    
+    // Status-based styling
+    let statusColor = "bg-purple-50 text-purple-700 border-purple-200";
+    let statusIcon = "✓";
+    if (src.status === 'ERROR') {
+      statusColor = "bg-red-50 text-red-700 border-red-200";
+      statusIcon = "✕";
+    } else if (src.status === 'PROCESSING') {
+      statusColor = "bg-yellow-50 text-yellow-700 border-yellow-200";
+      statusIcon = "⟳";
+    } else if (src.status === 'PARTIAL') {
+      statusColor = "bg-orange-50 text-orange-700 border-orange-200";
+      statusIcon = "⚠";
+    }
+    
     card.className = "p-2.5 bg-white border border-purple-100 rounded-xl flex items-center justify-between shadow-sm text-xs font-mono";
     card.innerHTML = `
       <div class="flex items-center space-x-2 truncate">
         <span class="text-purple-600 font-bold text-sm">📄</span>
-        <span class="truncate font-bold text-slate-800">${src.fileName}</span>
+        <div class="flex flex-col truncate">
+          <span class="truncate font-bold text-slate-800">${src.fileName}</span>
+          ${src.errorMessage ? `<span class="text-[9px] text-red-500 truncate">${src.errorMessage}</span>` : ''}
+        </div>
       </div>
-      <span class="text-[9px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-bold border border-purple-200 flex-shrink-0">
-        ${src.pageCount} bet / ${src.chunkCount} RAG Vector
-      </span>
+      <div class="flex items-center space-x-1.5 flex-shrink-0">
+        <span class="text-[9px] px-2 py-0.5 rounded-full ${statusColor} font-bold border flex-shrink-0" title="${src.status || 'COMPLETED'}">
+          ${statusIcon} ${src.pageCount}b/${src.chunkCount}v
+        </span>
+      </div>
     `;
     sourcesList.appendChild(card);
   });

@@ -131,6 +131,29 @@
       <!-- VS Code Style Directory Header & Toolbar -->
       <div id="sidebar-directory-wrapper" class="flex-1 flex flex-col overflow-hidden min-h-0 sidebar-label">
         <div class="px-4 py-2 border-b border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50/50">
+          <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider font-sans">TEGLAR</span>
+          
+          <!-- Tag Cloud "+" Button to Create New Tag -->
+          <button id="btn-toggle-new-tag" class="p-1 hover:bg-purple-100/70 text-slate-600 hover:text-purple-700 rounded-md transition-all flex items-center space-x-1 text-[10px] font-bold" title="Yangi Teg Yaratish">
+            <svg class="w-3.5 h-3.5 text-purple-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        </div>
+        
+        <!-- Inline Tag Creation Form -->
+        <div id="inline-tag-form" class="hidden px-3 py-2 bg-purple-50/70 border-b border-purple-100 flex-shrink-0">
+          <div class="flex items-center space-x-1.5 bg-white border border-purple-200 rounded-xl p-1 shadow-sm">
+            <input type="text" id="input-tag-name" placeholder="Yangi teg nomi..." class="w-full bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-none px-2 font-mono">
+            <button id="btn-save-tag" class="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold rounded-lg transition-all">Saqlash</button>
+            <button id="btn-cancel-tag" class="p-1 text-slate-400 hover:bg-slate-100 rounded-lg">✕</button>
+          </div>
+        </div>
+        
+        <!-- Tag Cloud Container -->
+        <div id="tag-cloud" class="px-3 py-2.5 flex flex-wrap gap-1.5 border-b border-slate-100 max-h-32 overflow-y-auto custom-scrollbar sidebar-label"></div>
+        
+        <div class="px-4 py-2 border-b border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50/50">
           <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider font-sans">SAQLANGAN YOZUVLAR</span>
           
           <!-- VS Code Style File/Folder Creator Buttons -->
@@ -159,12 +182,8 @@
           </div>
         </div>
 
-        <!-- Expandable Folder Directory Container with HTML5 Drag & Drop -->
-        <div id="node-directory" class="flex-1 overflow-y-auto px-3 py-2.5 space-y-2 custom-scrollbar">
-          <div class="text-slate-400 text-xs text-center py-6 italic font-mono">
-            Yozuvlar topilmadi.
-          </div>
-        </div>
+        <!-- Expandable Folder Directory Container with HTML5 Drag & Drop - Absolute Vertical Constraints -->
+        <div id="node-directory" class="flex-1 overflow-y-auto px-3 py-2.5 space-y-2 custom-scrollbar" style="min-height: 0; max-height: calc(100vh - 420px);"></div>
       </div>
 
       <!-- Bottom Profile Banner -->
