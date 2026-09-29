@@ -16,7 +16,7 @@ const getEnv = (key, fallback = "") => {
 const CONFIG = {
   SUPABASE_URL: 'https://kkxkrtvthipfamssdcjr.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtreGtydHZ0aGlwZmFtc3NkY2pyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNTcwMDQsImV4cCI6MjA5OTkzMzAwNH0.x6_QPSlFiDZ04jE8z5NMu_67U0kpxihXgdIwyPlIGVE',
-  OPENROUTER_API_KEY: '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',
+  OPENROUTER_API_KEY: getEnv('VITE_OPENROUTER_API_KEY', ''),
   OPENROUTER_MODEL: getEnv("VITE_OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
   EMBEDDING_MODEL: "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 };
